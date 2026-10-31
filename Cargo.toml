@@ -7,6 +7,8 @@ exclude = ["design"]
 resolver = "3"
 
 [workspace.dependencies]
+# common's chat-ui takes the design crate from the consuming workspace.
+plan-ai-design = { path = "design" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "query"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rmcp = { version = "0.17", default-features = false, features = ["server", "transport-io", "macros"] }
