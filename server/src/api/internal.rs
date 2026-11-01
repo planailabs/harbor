@@ -196,8 +196,17 @@ async fn get_or_mint_proxy_token(
         .await
         .map_err(|e| format!("credential error: {e}"))?;
 
-    let client = reqwest::Client::new();
-    let resp = client
+    // A short, bounded request: `get_routes` waits for these mints, and the
+    // proxy gives up on `get_routes` after 30 s — one slow mac-mgmt must not
+    // take every route down with it.
+    static MINT_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("reqwest client")
+    });
+    let resp = MINT_CLIENT
         .post(format!(
             "{}/api/proxy-token",
             server_url.trim_end_matches('/')
@@ -208,12 +217,13 @@ async fn get_or_mint_proxy_token(
         }))
         .send()
         .await
-        .map_err(|e| format!("mint request failed: {e}"))?;
+        .map_err(|e| format!("mint request to {server_url} failed: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("mint failed ({status}): {body}"));
+        let body: String = body.chars().take(300).collect();
+        return Err(format!("mint at {server_url} failed ({status}): {body}"));
     }
 
     let body: serde_json::Value = resp
@@ -407,6 +417,29 @@ async fn get_routes(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // Mint (or take from the cache) one proxy token per distinct credential,
+    // all at once: a credential whose mint fails or times out only drops its
+    // own relay routes, and the whole table is never held up by one server.
+    let mut mints = tokio::task::JoinSet::new();
+    let cred_ids: std::collections::HashSet<uuid::Uuid> =
+        relay_rows.iter().map(|r| r.4).collect();
+    for cred_id in cred_ids {
+        let pool = state.pool.clone();
+        mints.spawn(async move { (cred_id, get_or_mint_proxy_token(&pool, cred_id).await) });
+    }
+    let mut minted = std::collections::HashMap::new();
+    while let Some(res) = mints.join_next().await {
+        match res {
+            Ok((cred_id, result)) => {
+                if let Err(e) = &result {
+                    tracing::error!(credential_id = %cred_id, "failed to mint proxy token: {e}");
+                }
+                minted.insert(cred_id, result);
+            }
+            Err(e) => tracing::error!("proxy token mint task failed: {e}"),
+        }
+    }
+
     for (
         domain,
         subdomain,
@@ -432,7 +465,11 @@ async fn get_routes(
             )
         })?;
 
-        let proxy_token = match get_or_mint_proxy_token(&state.pool, cred_id).await {
+        let mint = minted
+            .get(&cred_id)
+            .cloned()
+            .unwrap_or_else(|| Err("mint task failed".to_string()));
+        let proxy_token = match mint {
             Ok((t, expires_at)) => {
                 super::counters::COUNTERS
                     .relay_mint_success
@@ -454,7 +491,7 @@ async fn get_routes(
                 t
             }
             Err(e) => {
-                tracing::error!(host = %host, "failed to mint proxy token: {e}");
+                tracing::error!(host = %host, credential_id = %cred_id, "relay route left out, no proxy token: {e}");
                 super::counters::COUNTERS
                     .relay_mint_failed
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

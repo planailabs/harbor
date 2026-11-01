@@ -15,7 +15,10 @@ eventsource-stream = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
-tokio = { version = "1", features = ["full"] }
+# pingora-core 0.8.1 builds BufStream::with_capacity(0, 0, ..) for every
+# accepted TCP stream; tokio 1.54 asserts capacity > 0 there and the proxy
+# panics at startup. Lift once pingora stops doing that.
+tokio = { version = ">=1, <1.54", features = ["full"] }
 tokio-stream = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
