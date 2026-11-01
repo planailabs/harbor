@@ -28,5 +28,44 @@ flake-check:
   script:
     # VM-backed flake checks are resource-heavy; run them serially so one
     # test VM cannot starve another until the NixOS backdoor times out.
-    - nix flake check -L --max-jobs 1
+    #
+    # `timeout:` is not the only way this job can die: GitLab also fails a
+    # running job that stops sending trace updates for ~30 minutes
+    # (`failure_reason: no_updates_running`, tooltip "running job stopped
+    # receiving updates"). A single silent step here takes 15-40 minutes --
+    # the final rustc link of `web-agency-server` prints nothing between its
+    # last warning and `Compiled [N/1016]` -- so a slow but healthy run is
+    # killed mid-build with no failing command (pipeline 3049 / job 7510: last
+    # output 02:37:57Z, killed 03:15:12Z). Keep the trace alive with a
+    # heartbeat that also reports the last known output line, and take the
+    # gate's exit status from a status file so the `tee` in the pipeline
+    # cannot hide a failed check.
+    - |
+      set -eu
+      log="$(mktemp)"
+      status_file="$(mktemp)"
+      trap 'rm -f "$log" "$status_file"' EXIT
+      (
+        start=$(date +%s)
+        while sleep 60; do
+          printf '[heartbeat] %ss elapsed, flake check still running; last output: %s\n' \
+            "$(( $(date +%s) - start ))" "$(tail -n 1 "$log" 2>/dev/null || true)"
+        done
+      ) &
+      heartbeat=$!
+      # `set +e` inside the subshell matters: `set -eu` is inherited, and
+      # without it the subshell aborts on the gate's own non-zero exit, so the
+      # status line never runs and the real exit code is lost. The recorded
+      # status then survives the `tee` in the pipeline instead of being
+      # replaced by tee's 0.
+      ( set +e; nix flake check -L --max-jobs 1 2>&1; echo "$?" >"$status_file" ) | tee "$log"
+      kill "$heartbeat" 2>/dev/null || true
+      wait "$heartbeat" 2>/dev/null || true
+      status="$(cat "$status_file" 2>/dev/null || true)"
+      if [ -z "$status" ]; then
+        # The gate subshell died without recording a status (signal/OOM).
+        echo "flake check exited without a recorded status; treating as failure" >&2
+        status=1
+      fi
+      exit "$status"
   timeout: 3h
