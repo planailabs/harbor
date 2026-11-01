@@ -81,7 +81,7 @@ impl plan_ai_auth::UserResolver for PgUserResolver {
         .fetch_all(&self.pool)
         .await?
         .into_iter()
-        .map(|(org_id, role)| OrgMembership { org_id, role })
+        .map(|(org_id, role)| OrgMembership::new(org_id, role))
         .collect();
 
         Ok(WebUser {
@@ -111,7 +111,7 @@ impl plan_ai_auth::UserResolver for PgUserResolver {
                 .fetch_all(&self.pool)
                 .await?
                 .into_iter()
-                .map(|(org_id, role)| OrgMembership { org_id, role })
+                .map(|(org_id, role)| OrgMembership::new(org_id, role))
                 .collect();
 
                 Ok(Some(WebUser {

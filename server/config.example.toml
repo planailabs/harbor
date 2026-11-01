@@ -29,6 +29,18 @@ encryption_key = "CHANGE_ME_base64_encoded_32_byte_key"
 # allowed_domains = ["example.com"]
 # auto_join_orgs = ["default"]
 
+# plan.ai accounts (Zitadel, GitHub as its social login). Redirect URI:
+# {external_url}/auth/zitadel/callback, registered on the app's OIDC client in
+# the plan.ai org.
+# [[auth.providers]]
+# slug = "zitadel"
+# name = "plan.ai"
+# issuer = "https://id.plan.ai"
+# client_id = "xxx"
+# client_secret = "xxx"
+# allow_all = true
+# zitadel_org = "397597061693833352"   # only plan.ai org accounts sign in
+
 # [proxy]
 # agency_domain = "agency.example.com"
 # agency_upstream = "127.0.0.1:7380"
