@@ -239,7 +239,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainBulkDeployCloudflareInput| async move {
                 endpoints::domains::domain_bulk_deploy_cloudflare(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         d.custom(
             "bulk_set_nameservers",
             Risk::Mutating,
@@ -248,7 +249,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainBulkSetNameserversInput| async move {
                 endpoints::domains::domain_bulk_set_nameservers(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         d.custom(
             "bulk_set_ssl_mode",
             Risk::Mutating,
@@ -257,7 +259,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainBulkSetSslModeInput| async move {
                 endpoints::domains::domain_bulk_set_ssl_mode(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         d.custom(
             "bulk_set_ai_bots",
             Risk::Mutating,
@@ -266,7 +269,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainBulkSetAiBotsInput| async move {
                 endpoints::domains::domain_bulk_set_ai_bots(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         d.custom(
             "bulk_create_pages",
             Risk::Mutating,
@@ -275,7 +279,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainBulkCreatePagesInput| async move {
                 endpoints::domains::domain_bulk_create_pages(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut s = reg.resource("subdomains", "subdomain", "Domains");
@@ -314,25 +319,29 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgListInput| async move {
                 endpoints::organizations::organization_list(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         o.create(
             "Create an organization (admin only).",
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgCreateInput| async move {
                 endpoints::organizations::organization_create(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         o.get(
             "Get an organization by id, including its members (admin only).",
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgGetInput| async move {
                 endpoints::organizations::organization_get(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         o.update(
             "Update an organization: show_billing and/or default changedetection credential (admin only).",
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgUpdateInput| async move {
                 endpoints::organizations::organization_update(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         // Collection verbs: the inputs carry organization_id + user selector, so
         // no `{id}` path segment to merge.
         o.custom(
@@ -343,7 +352,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgMemberAddInput| async move {
                 endpoints::organizations::organization_member_add(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         o.custom(
             "remove_member",
             Risk::Mutating,
@@ -352,7 +362,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgMemberRemoveInput| async move {
                 endpoints::organizations::organization_member_remove(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut w = reg.resource("webspaces", "webspace", "Webspaces");
@@ -591,7 +602,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
              input: endpoints::webspace_hosts::HostBulkSetChangedetectionInput| async move {
                 endpoints::webspace_hosts::host_bulk_set_changedetection(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         h.custom(
             "bulk_clear_changedetection",
             Risk::Mutating,
@@ -602,7 +614,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
              input: endpoints::webspace_hosts::HostBulkClearChangedetectionInput| async move {
                 endpoints::webspace_hosts::host_bulk_clear_changedetection(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut c = reg.resource("contacts", "contact", "Contacts");
@@ -626,7 +639,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::certificates::CertListInput| async move {
                 endpoints::certificates::certificate_list(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         c.custom(
             "issue",
             Risk::Mutating,
@@ -635,7 +649,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::certificates::CertIssueInput| async move {
                 endpoints::certificates::certificate_issue(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut u = reg.resource("users", "user", "Users");
@@ -644,31 +659,36 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::users::UserListInput| async move {
                 endpoints::users::user_list(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         u.get(
             "Get a user by id (admin only).",
             |pool: sqlx::PgPool, p, input: endpoints::users::UserGetInput| async move {
                 endpoints::users::user_get(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         u.create(
             "Create a user (admin only). Returns the new user's id.",
             |pool: sqlx::PgPool, p, input: endpoints::users::UserCreateInput| async move {
                 endpoints::users::user_create(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         u.update(
             "Set a user's admin flag (admin only; refuses self-demotion).",
             |pool: sqlx::PgPool, p, input: endpoints::users::UserUpdateInput| async move {
                 endpoints::users::user_update(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         u.delete(
             "Delete a user (admin only; refuses self-deletion).",
             |pool: sqlx::PgPool, p, input: endpoints::users::UserDeleteInput| async move {
                 endpoints::users::user_delete(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut b = reg.resource("basic-auth-lists", "basic_auth_list", "Basic Auth");
@@ -898,7 +918,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::mac_mgmt::MacMgmtClustersInput| async move {
                 endpoints::mac_mgmt::mac_mgmt_clusters(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         m.custom(
             "machines",
             Risk::ReadOnly,
@@ -907,7 +928,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::mac_mgmt::MacMgmtMachinesInput| async move {
                 endpoints::mac_mgmt::mac_mgmt_machines(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
         m.custom(
             "relay_urls",
             Risk::ReadOnly,
@@ -925,7 +947,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::mac_mgmt::MacMgmtTokenCreateInput| async move {
                 endpoints::mac_mgmt::mac_mgmt_token_create(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
     {
         let mut s = reg.resource("sync", "sync", "Sync");
@@ -937,7 +960,8 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             |pool: sqlx::PgPool, p, input: endpoints::sync::SyncTriggerInput| async move {
                 endpoints::sync::sync_trigger(&pool, &p, input).await
             },
-        );
+        )
+        .admin_only();
     }
 
     reg
@@ -1202,6 +1226,29 @@ mod tests {
             .expect("lazy pool");
         let registry = build_registry(pool.clone());
         let _ = registry.http_router(pool);
+    }
+
+    /// Admin-only tools aren't shown to an org member or an org token; their
+    /// org-scoped tools are.
+    #[tokio::test]
+    async fn admin_only_tools_are_hidden_from_non_admins() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .expect("lazy pool");
+        let registry = build_registry(pool);
+        let tool = |name: &str| {
+            registry.endpoints().iter().find(|e| e.tool_name() == name).unwrap().clone()
+        };
+        let org = uuid::Uuid::from_u128(1);
+        let member = plan_ai_api_mcp::Principal::scoped("ada@acme.io", [org].into(), [org].into());
+        let admin = plan_ai_api_mcp::Principal::admin("root@plan.ai");
+        for name in ["user_delete", "organization_create", "mac_mgmt_token_create", "domain_bulk_set_ssl_mode"] {
+            assert!(!tool(name).visible_to(&member), "{name} shown to a non-admin");
+            assert!(tool(name).visible_to(&admin), "{name} hidden from an admin");
+        }
+        for name in ["domain_list", "webspace_create", "token_create", "credential_create"] {
+            assert!(tool(name).visible_to(&member), "{name} hidden from an org member");
+        }
     }
 
     /// The compile-time half of template validation can't check tool names
