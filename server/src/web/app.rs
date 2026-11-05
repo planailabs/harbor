@@ -157,6 +157,7 @@ pub fn App() -> Element {
     rsx! {
         script { dangerous_inner_html: plan_ai_design::THEME_INIT_SCRIPT }
         document::Link { rel: "stylesheet", href: "{css_href}" }
+        document::Link { rel: "icon", r#type: "image/svg+xml", href: crate::web::components::navbar::ship_favicon() }
 
         div { id: "wasm-loading",
             style: plan_ai_design::WASM_LOADING_STYLE,

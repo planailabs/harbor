@@ -97,7 +97,27 @@ fn nav_items(is_admin: bool, show_billing: bool) -> Vec<NavItem> {
     items
 }
 
-/// Harbor's mark: an old sailing ship (two masts, square sails, flag) on the water.
+/// Harbor's mark, an old sailing ship on the water: masts (broken by the
+/// sails) with a flag, two square sails per mast, the hull with its stern
+/// castle, the waves. 24×24, stroked.
+pub const SHIP_PATHS: [&str; 4] = [
+    "M10 2v2.5M10 8v1M10 12.5v2M16.5 5.5v1M16.5 9v1M16.5 12.5v2M10 2l2.2.9-2.2.9",
+    "M7.5 4.5h5c.7 1.2.7 2.3 0 3.5h-5c.7-1.2.7-2.3 0-3.5zM6.5 9h7c.8 1.2.8 2.3 0 3.5h-7c.8-1.2.8-2.3 0-3.5zM14.5 6.5h4c.5.8.5 1.7 0 2.5h-4c.5-.8.5-1.7 0-2.5zM14.3 10h4.4c.5.8.5 1.7 0 2.5h-4.4c.5-.8.5-1.7 0-2.5z",
+    "M2.5 14.5h19l-1.7 3.8a1.5 1.5 0 0 1-1.4.9H5.6a1.5 1.5 0 0 1-1.4-.9zM2.5 14.5v-2h3.5v2",
+    "M1.5 21.5c1.3 0 1.9-.8 3.2-.8s1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8",
+];
+
+/// The ship as an SVG favicon (data URI): dark strokes, light on dark browser themes.
+pub fn ship_favicon() -> String {
+    let paths: String = SHIP_PATHS.iter().map(|d| format!("<path d='{d}'/>")).collect();
+    let svg = format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-width='1.6' \
+         stroke-linecap='round' stroke-linejoin='round'><style>svg{{stroke:#1f2937}}\
+         @media (prefers-color-scheme:dark){{svg{{stroke:#f3f4f6}}}}</style>{paths}</svg>"
+    );
+    format!("data:image/svg+xml,{}", svg.replace('#', "%23"))
+}
+
 #[component]
 fn HarborLogo() -> Element {
     rsx! {
@@ -112,16 +132,9 @@ fn HarborLogo() -> Element {
             stroke_linejoin: "round",
             view_box: "0 0 24 24",
             title { "Harbor" }
-            // masts (broken by the sails), flag
-            path { d: "M10 2v2.5M10 8v1M10 12.5v2M16.5 5.5v1M16.5 9v1M16.5 12.5v2M10 2l2.2.9-2.2.9" }
-            // square sails, two per mast
-            path { d: "M7.5 4.5h5c.7 1.2.7 2.3 0 3.5h-5c.7-1.2.7-2.3 0-3.5zM6.5 9h7c.8 1.2.8 2.3 0 3.5h-7c.8-1.2.8-2.3 0-3.5zM14.5 6.5h4c.5.8.5 1.7 0 2.5h-4c.5-.8.5-1.7 0-2.5zM14.3 10h4.4c.5.8.5 1.7 0 2.5h-4.4c.5-.8.5-1.7 0-2.5z" }
-            // forestay and bowsprit
-            path { d: "M16.5 5.5l6 6.8M20.5 14.5l2-2.2" }
-            // hull with a stern castle
-            path { d: "M2.5 14.5h19l-1.7 3.8a1.5 1.5 0 0 1-1.4.9H5.6a1.5 1.5 0 0 1-1.4-.9zM2.5 14.5v-2h3.5v2" }
-            // water
-            path { d: "M1.5 21.5c1.3 0 1.9-.8 3.2-.8s1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8" }
+            for d in SHIP_PATHS {
+                path { d }
+            }
         }
     }
 }
