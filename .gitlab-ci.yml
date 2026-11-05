@@ -27,10 +27,22 @@ build:
   timeout: 3h
   resource_group: build-cache
 
+# `test` and `flake-check` are heavy: the first runs the whole workspace suite,
+# the second builds the full VM workload, and every `nix-image` job lands on
+# the same single-host runner. Trunk pushes arrive in bursts, so mark both
+# `interruptible` and let a newer pipeline cancel an older, still-running one
+# instead of stacking several full builds on that host. On 2026-11-05
+# (pipelines 3129/3130/3132) three concurrent checks ran ~3x slower than a
+# lone check and all three were killed with `failure_reason:
+# no_updates_running` after the runner's log stream dropped, holding the
+# pipeline for hours while validating commits that were already superseded.
+# `build` stays non-interruptible: it only seeds the shared cache, and a
+# superseding pipeline wants that cache warm rather than half-filled.
 test:
   stage: test
   tags:
     - nix-image
+  interruptible: true
   script:
     - nix develop -c cargo test --workspace --locked
   timeout: 3h
@@ -39,6 +51,7 @@ flake-check:
   stage: check
   tags:
     - nix-image
+  interruptible: true
   script:
     # VM-backed flake checks are resource-heavy; run them serially so one
     # test VM cannot starve another until the NixOS backdoor times out. Each
