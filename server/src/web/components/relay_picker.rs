@@ -17,32 +17,22 @@ pub struct RelayCredOption {
     pub name: String,
 }
 
-/// mac-mgmt credentials visible to the current user (all for admins,
-/// org-scoped + global otherwise). Mirrors the folder-form loader.
+/// mac-mgmt credentials the current user may pick (all for admins; else
+/// their orgs' plus a global one only if it is the `selected` current value).
+/// Mirrors the folder-form loader.
 #[server]
-pub async fn load_mac_mgmt_creds() -> Result<Vec<RelayCredOption>, ServerFnError> {
+pub async fn load_mac_mgmt_creds(
+    selected: Vec<Uuid>,
+) -> Result<Vec<RelayCredOption>, ServerFnError> {
     let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = if user.is_admin {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'mac-mgmt' ORDER BY name",
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    } else {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'mac-mgmt' \
-             AND (organization_id = ANY($1) OR organization_id IS NULL) ORDER BY name",
-        )
-        .bind(&user.org_ids())
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    };
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["mac-mgmt"], &selected,
+    )
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| RelayCredOption { id, name })
+        .map(|(id, name, _)| RelayCredOption { id, name })
         .collect())
 }
 

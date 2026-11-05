@@ -31,24 +31,13 @@ struct CdCredOption {
 async fn list_cd_creds_for_bulk() -> Result<Vec<CdCredOption>, ServerFnError> {
     let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = if user.is_admin {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'changedetection' ORDER BY name",
-        ).fetch_all(&pool).await.map_err(|e| ServerFnError::new(e.to_string()))?
-    } else {
-        let org_ids = user.org_ids();
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'changedetection' \
-             AND (organization_id = ANY($1) OR organization_id IS NULL) ORDER BY name",
-        )
-        .bind(&org_ids)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    };
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["changedetection"], &[],
+    )
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| CdCredOption { id, name })
+        .map(|(id, name, _)| CdCredOption { id, name })
         .collect())
 }
 

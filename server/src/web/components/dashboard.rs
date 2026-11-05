@@ -80,7 +80,7 @@ async fn get_dashboard_stats() -> Result<DashboardStats, ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
         let credentials = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM credentials WHERE organization_id = ANY($1) OR organization_id IS NULL",
+            "SELECT count(*) FROM credentials WHERE organization_id = ANY($1)",
         ).bind(&org_ids).fetch_one(&pool).await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
         // Billing: only show if user has at least one org with show_billing = true

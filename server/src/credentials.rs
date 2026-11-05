@@ -268,7 +268,7 @@ pub async fn spaceship_client(
 }
 
 #[cfg(all(test, feature = "server"))]
-mod pg_tests {
+pub(crate) mod pg_tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
@@ -334,7 +334,7 @@ mod pg_tests {
 
     /// Boot a throwaway Postgres cluster and run the server migrations.
     /// The returned `PgTempDB` must stay alive for the duration of the test.
-    async fn test_db() -> (pgtemp::PgTempDB, PgPool) {
+    pub(crate) async fn test_db() -> (pgtemp::PgTempDB, PgPool) {
         init_env();
         let db = pgtemp::PgTempDB::builder()
             .with_data_dir_prefix(pgtemp_data_dir_prefix())

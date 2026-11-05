@@ -228,6 +228,9 @@ pub async fn changedetection_set(
     .ok_or_else(|| ApiError::not_found("webspace host not found"))?;
 
     principal.require_write(&org_id)?;
+    if let Some(cred_id) = input.credential_id {
+        super::credentials::require_credential_use(pool, principal, cred_id, old_cred_id).await?;
+    }
 
     // Undeploy old credential: clean up tags, watches, and notifications so
     // nothing from the old credential instance is left behind.

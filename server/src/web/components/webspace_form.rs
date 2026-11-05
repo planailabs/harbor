@@ -52,23 +52,10 @@ async fn load_folder_form_data(host_id: Uuid) -> Result<FolderFormData, ServerFn
     user.require_org_read(&org_id)?;
 
     let org_ids = user.org_ids();
-    let mac_mgmt_creds = if user.is_admin {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'mac-mgmt' ORDER BY name",
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    } else {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'mac-mgmt' \
-             AND (organization_id = ANY($1) OR organization_id IS NULL) ORDER BY name",
-        )
-        .bind(&org_ids)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    };
+    let mac_mgmt_creds = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["mac-mgmt"], &[],
+    )
+    .await?;
 
     let basic_auth_rows = if user.is_admin {
         sqlx::query_as::<_, (Uuid, String)>("SELECT id, name FROM basic_auth_lists ORDER BY name")
@@ -90,7 +77,7 @@ async fn load_folder_form_data(host_id: Uuid) -> Result<FolderFormData, ServerFn
         host_kind,
         mac_mgmt_creds: mac_mgmt_creds
             .into_iter()
-            .map(|(id, name)| CredOption { id, name })
+            .map(|(id, name, _)| CredOption { id, name })
             .collect(),
         basic_auth_lists: basic_auth_rows
             .into_iter()

@@ -27,17 +27,15 @@ struct CfCredOption {
 
 #[server]
 async fn list_cf_credentials() -> Result<Vec<CfCredOption>, ServerFnError> {
-    let _user = crate::web::user::current_user().await?;
+    let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, name FROM credentials WHERE credential_type = 'cloudflare' ORDER BY name",
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["cloudflare"], &[],
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| CfCredOption { id, name })
+        .map(|(id, name, _)| CfCredOption { id, name })
         .collect())
 }
 

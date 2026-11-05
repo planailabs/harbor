@@ -32,19 +32,19 @@ struct CredOption {
 
 // ── Server functions ──────────────────────────────────────────────────
 
+/// Cloudflare credentials for creating a Pages project (a new choice: no
+/// global credentials for non-admins).
 #[server]
 async fn list_cf_creds_for_pages() -> Result<Vec<CredOption>, ServerFnError> {
-    let _user = crate::web::user::current_user().await?;
+    let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, name FROM credentials WHERE credential_type = 'cloudflare' ORDER BY name",
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["cloudflare"], &[],
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| CredOption { id, name })
+        .map(|(id, name, _)| CredOption { id, name })
         .collect())
 }
 
@@ -54,40 +54,24 @@ struct TunnelCredOptions {
     basic_auths: Vec<CredOption>,
 }
 
-/// client_cert + basic_auth credentials visible to the current user
-/// (all for admins, org-scoped + global otherwise), for the tunnel pickers.
+/// client_cert + basic_auth credentials for the tunnel pickers (all for
+/// admins; else the user's orgs' plus a global one only if it is one of the
+/// folder's `selected` current values).
 #[server]
-async fn load_tunnel_creds() -> Result<TunnelCredOptions, ServerFnError> {
+async fn load_tunnel_creds(selected: Vec<Uuid>) -> Result<TunnelCredOptions, ServerFnError> {
     let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["client_cert", "basic_auth"], &selected,
+    )
+    .await?;
     let mut out = TunnelCredOptions::default();
-    for (ctype, target) in [("client_cert", 0usize), ("basic_auth", 1usize)] {
-        let rows = if user.is_admin {
-            sqlx::query_as::<_, (Uuid, String)>(
-                "SELECT id, name FROM credentials WHERE credential_type = $1 ORDER BY name",
-            )
-            .bind(ctype)
-            .fetch_all(&pool)
-            .await
+    for (id, name, ctype) in rows {
+        let opt = CredOption { id, name };
+        if ctype == "client_cert" {
+            out.client_certs.push(opt);
         } else {
-            sqlx::query_as::<_, (Uuid, String)>(
-                "SELECT id, name FROM credentials WHERE credential_type = $1 \
-                 AND (organization_id = ANY($2) OR organization_id IS NULL) ORDER BY name",
-            )
-            .bind(ctype)
-            .bind(&user.org_ids())
-            .fetch_all(&pool)
-            .await
-        }
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let opts = rows
-            .into_iter()
-            .map(|(id, name)| CredOption { id, name })
-            .collect();
-        if target == 0 {
-            out.client_certs = opts;
-        } else {
-            out.basic_auths = opts;
+            out.basic_auths.push(opt);
         }
     }
     Ok(out)
@@ -1128,7 +1112,7 @@ fn WebspaceSettingsSection(
         let want = is_relay;
         async move {
             if want {
-                load_mac_mgmt_creds().await
+                load_mac_mgmt_creds(current_relay_credential_id.into_iter().collect()).await
             } else {
                 Ok(Vec::new())
             }
@@ -1140,7 +1124,11 @@ fn WebspaceSettingsSection(
         let want = is_tunnel;
         async move {
             if want {
-                load_tunnel_creds().await
+                let selected = current_tunnel_client_cert
+                    .into_iter()
+                    .chain(current_tunnel_basic_auth)
+                    .collect();
+                load_tunnel_creds(selected).await
             } else {
                 Ok(TunnelCredOptions::default())
             }

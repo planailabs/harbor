@@ -92,18 +92,16 @@ async fn list_domains_for_binding(host_id: Uuid) -> Result<Vec<DomainOption>, Se
 }
 
 #[server]
-async fn list_cd_creds() -> Result<Vec<CredOption>, ServerFnError> {
-    let _user = crate::web::user::current_user().await?;
+async fn list_cd_creds(selected: Vec<Uuid>) -> Result<Vec<CredOption>, ServerFnError> {
+    let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, name FROM credentials WHERE credential_type = 'changedetection' ORDER BY name",
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["changedetection"], &selected,
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| CredOption { id, name })
+        .map(|(id, name, _)| CredOption { id, name })
         .collect())
 }
 
@@ -406,7 +404,8 @@ fn ChangeDetectionSection(
     current_credential_name: Option<String>,
 ) -> Element {
     let mut refresh: Signal<u32> = use_context();
-    let cd_creds = use_server_future(list_cd_creds)?;
+    let cd_creds =
+        use_server_future(move || list_cd_creds(current_credential_id.into_iter().collect()))?;
     let cred_list: Vec<CredOption> = match &*cd_creds.read() {
         Some(Ok(c)) => c.clone(),
         _ => vec![],

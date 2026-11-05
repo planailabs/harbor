@@ -32,12 +32,11 @@ async fn list_orgs_and_creds() -> Result<(Vec<OrgOption>, Vec<CredOption>), Serv
 
     let orgs = crate::web::user::list_user_orgs(&user, &pool).await?;
 
-    let creds = sqlx::query_as::<_, (Uuid, String, String)>(
-        "SELECT id, name, credential_type FROM credentials ORDER BY name",
+    // Only Cloudflare/Spaceship credentials can be discovered/imported from.
+    let creds = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["cloudflare", "spaceship"], &[],
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .await?;
 
     Ok((
         orgs,

@@ -504,6 +504,9 @@ pub async fn domain_create(
     input: DomainCreateInput,
 ) -> Result<Uuid, ApiError> {
     principal.require_write(&input.org_id)?;
+    if let Some(cred_id) = input.cf_credential_id {
+        super::credentials::require_credential_use(pool, principal, cred_id, None).await?;
+    }
 
     let domain_name = &input.domain_name;
     let mut zone_id: Option<String> = None;
@@ -694,8 +697,8 @@ pub async fn domain_deploy_cloudflare(
     principal: &Principal,
     input: DomainDeployCloudflareInput,
 ) -> Result<DeployResult, ApiError> {
-    let (domain_name, org_id) = sqlx::query_as::<_, (String, Uuid)>(
-        "SELECT name, organization_id FROM domains WHERE id = $1",
+    let (domain_name, org_id, cur_cred) = sqlx::query_as::<_, (String, Uuid, Option<Uuid>)>(
+        "SELECT name, organization_id, cloudflare_credential_id FROM domains WHERE id = $1",
     )
     .bind(input.id)
     .fetch_optional(pool)
@@ -704,6 +707,8 @@ pub async fn domain_deploy_cloudflare(
     .ok_or_else(|| ApiError::not_found("domain not found"))?;
 
     principal.require_write(&org_id)?;
+    super::credentials::require_credential_use(pool, principal, input.credential_id, cur_cred)
+        .await?;
 
     let (client, account_id) =
         crate::credentials::cf_client_with_account(pool, input.credential_id)
@@ -1332,15 +1337,15 @@ pub async fn domain_bulk_create_pages(
 // ── Availability / discovery / import ─────────────────────────────────
 
 /// Check a domain's availability and registration pricing via a registrar
-/// credential (requires credential read: credential's org, or admin for
-/// global credentials).
+/// credential (requires credential read: the credential's org; a global
+/// credential only for admins or when already attached in a readable org).
 #[api_mcp_dioxus_server(server = "check_domain_availability")]
 pub async fn domain_check_availability(
     pool: &sqlx::PgPool,
     principal: &Principal,
     input: DomainCheckAvailabilityInput,
 ) -> Result<AvailabilityResult, ApiError> {
-    super::credentials::require_credential_read(pool, principal, input.credential_id).await?;
+    super::credentials::require_credential_access(pool, principal, input.credential_id).await?;
 
     let cred_type =
         sqlx::query_scalar::<_, String>("SELECT credential_type FROM credentials WHERE id = $1")
@@ -1404,6 +1409,7 @@ pub async fn domain_discover(
     input: DomainDiscoverInput,
 ) -> Result<Vec<DiscoveredDomain>, ApiError> {
     principal.require_read(&input.organization_id)?;
+    super::credentials::require_credential_access(pool, principal, input.credential_id).await?;
 
     let cred_type =
         sqlx::query_scalar::<_, String>("SELECT credential_type FROM credentials WHERE id = $1")
@@ -1476,6 +1482,8 @@ pub async fn domain_import(
     input: DomainImportInput,
 ) -> Result<ImportResult, ApiError> {
     principal.require_write(&input.organization_id)?;
+    // Imported domains store the credential, so this is a new assignment.
+    super::credentials::require_credential_use(pool, principal, input.credential_id, None).await?;
 
     let cred_type =
         sqlx::query_scalar::<_, String>("SELECT credential_type FROM credentials WHERE id = $1")

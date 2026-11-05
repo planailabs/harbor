@@ -596,6 +596,9 @@ pub async fn webspace_create(
         return Err(ApiError::bad_request("invalid folder hosting type"));
     }
     let path = normalize_path_prefix(&input.path_prefix)?;
+    if let Some(cred_id) = input.relay_credential_id {
+        super::credentials::require_credential_use(pool, principal, cred_id, None).await?;
+    }
 
     let id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO webspaces (organization_id, webspace_host_id, name, path_prefix, hosting_type, runtime, relay_url, relay_credential_id, auth_mode, auth_basic_list_id, local_status) \
@@ -733,6 +736,10 @@ pub async fn webspace_update(
         cur_relay_url
     };
     let relay_credential_id = input.relay_credential_id.or(cur_relay_cred);
+    if let Some(cred_id) = input.relay_credential_id {
+        super::credentials::require_credential_use(pool, principal, cred_id, cur_relay_cred)
+            .await?;
+    }
     let auth_mode = input.auth_mode.unwrap_or(cur_auth_mode);
     let auth_basic_list_id = if input.auth_basic_list_id.is_some() {
         input.auth_basic_list_id
@@ -761,11 +768,18 @@ pub async fn webspace_update(
     // Newly assigned tunnel credentials must be of the right type and visible
     // to this org (own or global) — otherwise an org member could point a
     // folder at another org's credential and exfiltrate it via their upstream.
+    // A newly chosen global credential additionally needs an admin.
     if input.tunnel_client_cert_credential_id.is_some() && tunnel_client_cert != cur_tunnel_client_cert {
-        require_usable_credential(pool, tunnel_client_cert.unwrap(), "client_cert", org_id).await?;
+        let cred_id = tunnel_client_cert.unwrap();
+        require_usable_credential(pool, cred_id, "client_cert", org_id).await?;
+        super::credentials::require_credential_use(pool, principal, cred_id, cur_tunnel_client_cert)
+            .await?;
     }
     if input.tunnel_basic_auth_credential_id.is_some() && tunnel_basic_auth != cur_tunnel_basic_auth {
-        require_usable_credential(pool, tunnel_basic_auth.unwrap(), "basic_auth", org_id).await?;
+        let cred_id = tunnel_basic_auth.unwrap();
+        require_usable_credential(pool, cred_id, "basic_auth", org_id).await?;
+        super::credentials::require_credential_use(pool, principal, cred_id, cur_tunnel_basic_auth)
+            .await?;
     }
 
     sqlx::query(
@@ -903,8 +917,8 @@ pub async fn webspace_deploy_pages(
     principal: &Principal,
     input: WebspaceDeployPagesInput,
 ) -> Result<String, ApiError> {
-    let (ws_name, org_id) = sqlx::query_as::<_, (String, Uuid)>(
-        "SELECT name, organization_id FROM webspaces WHERE id = $1",
+    let (ws_name, org_id, cur_cred) = sqlx::query_as::<_, (String, Uuid, Option<Uuid>)>(
+        "SELECT name, organization_id, cloudflare_credential_id FROM webspaces WHERE id = $1",
     )
     .bind(input.id)
     .fetch_optional(pool)
@@ -913,6 +927,8 @@ pub async fn webspace_deploy_pages(
     .ok_or_else(|| ApiError::not_found("webspace not found"))?;
 
     principal.require_write(&org_id)?;
+    super::credentials::require_credential_use(pool, principal, input.credential_id, cur_cred)
+        .await?;
 
     let (client, account_id) = cf_pages_client(pool, input.credential_id).await?;
 
@@ -1126,6 +1142,7 @@ pub async fn webspace_discover_pages(
     input: WebspaceDiscoverPagesInput,
 ) -> Result<Vec<DiscoveredProject>, ApiError> {
     principal.require_read(&input.org_id)?;
+    super::credentials::require_credential_access(pool, principal, input.credential_id).await?;
 
     let (client, account_id) = cf_pages_client(pool, input.credential_id).await?;
 
@@ -1176,6 +1193,8 @@ pub async fn webspace_import_pages(
     input: WebspaceImportPagesInput,
 ) -> Result<ImportResult, ApiError> {
     principal.require_write(&input.org_id)?;
+    // Imported projects store the credential, so this is a new assignment.
+    super::credentials::require_credential_use(pool, principal, input.credential_id, None).await?;
 
     let (client, account_id) = cf_pages_client(pool, input.credential_id).await?;
 

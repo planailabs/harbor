@@ -29,30 +29,19 @@ async fn load_host_form_data() -> Result<HostFormData, ServerFnError> {
     let pool = crate::server_pool()?;
     let orgs = crate::web::user::list_user_write_orgs(&user, &pool).await?;
 
-    let cloudflare_creds = if user.is_admin {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'cloudflare' ORDER BY name",
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    } else {
-        let org_ids = user.org_ids();
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM credentials WHERE credential_type = 'cloudflare' \
-             AND (organization_id = ANY($1) OR organization_id IS NULL) ORDER BY name",
-        )
-        .bind(&org_ids)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-    };
+    let cloudflare_creds = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+
+        &pool, &user, &["cloudflare"], &[],
+
+    )
+
+    .await?;
 
     Ok(HostFormData {
         orgs,
         cloudflare_creds: cloudflare_creds
             .into_iter()
-            .map(|(id, name)| CredOption { id, name })
+            .map(|(id, name, _)| CredOption { id, name })
             .collect(),
     })
 }

@@ -129,26 +129,27 @@ async fn read_json<T: serde::de::DeserializeOwned>(
         .map_err(|e| ApiError::internal(format!("mac-mgmt {what}: bad response: {e}")))
 }
 
-/// Allow access when the caller can read the credential: admins always,
-/// org members for org-scoped credentials, anyone signed in for global ones
-/// (mirrors what the webspace form exposes in its credential dropdown).
+/// Allow access when the caller may use the credential (admins; org members
+/// for org-scoped credentials; a global one only when already attached in an
+/// org the caller can read) and it is a mac-mgmt credential.
 #[cfg(feature = "server")]
 async fn require_credential_read(
     pool: &sqlx::PgPool,
     p: &Principal,
     credential_id: Uuid,
 ) -> Result<(), ApiError> {
-    let org: Option<Option<Uuid>> = sqlx::query_scalar(
-        "SELECT organization_id FROM credentials WHERE id = $1 AND credential_type = 'mac-mgmt'",
+    super::credentials::require_credential_access(pool, p, credential_id).await?;
+    let is_mac_mgmt: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM credentials WHERE id = $1 AND credential_type = 'mac-mgmt')",
     )
     .bind(credential_id)
-    .fetch_optional(pool)
+    .fetch_one(pool)
     .await
     .map_err(super::internal)?;
-    match org {
-        None => Err(ApiError::not_found("mac-mgmt credential not found")),
-        Some(Some(org_id)) => p.require_read(&org_id),
-        Some(None) => Ok(()),
+    if is_mac_mgmt {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request("not a mac-mgmt credential"))
     }
 }
 

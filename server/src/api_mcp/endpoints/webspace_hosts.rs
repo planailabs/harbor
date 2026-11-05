@@ -262,6 +262,9 @@ pub async fn host_create(
             "invalid kind (expected 'proxy' or 'cloudflare')",
         ));
     }
+    if let (true, Some(cred_id)) = (input.kind == "cloudflare", input.cloudflare_credential_id) {
+        super::credentials::require_credential_use(pool, principal, cred_id, None).await?;
+    }
 
     let host_id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO webspace_hosts (organization_id, name, kind) VALUES ($1, $2, $3) RETURNING id",
@@ -1014,6 +1017,16 @@ pub async fn host_set_changedetection(
 ) -> Result<(), ApiError> {
     let (org_id, _) = host_org(pool, input.id).await?;
     principal.require_write(&org_id)?;
+    if let Some(cred_id) = input.credential_id {
+        let current = sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT changedetection_credential_id FROM webspace_hosts WHERE id = $1",
+        )
+        .bind(input.id)
+        .fetch_one(pool)
+        .await
+        .map_err(super::internal)?;
+        super::credentials::require_credential_use(pool, principal, cred_id, current).await?;
+    }
 
     sqlx::query(
         "UPDATE webspace_hosts SET changedetection_credential_id = $1, updated_at = now() WHERE id = $2",

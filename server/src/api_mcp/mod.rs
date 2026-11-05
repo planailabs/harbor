@@ -208,7 +208,7 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             "check_availability",
             Risk::ReadOnly,
             OnItem::No,
-            "Check a domain's availability and registration pricing via a registrar credential (credential org read; global credentials admin-only).",
+            "Check a domain's availability and registration pricing via a registrar credential (credential org read; plan.ai's shared credentials only for admins or when already attached in a readable org).",
             |pool: sqlx::PgPool, p, input: endpoints::domains::DomainCheckAvailabilityInput| async move {
                 endpoints::domains::domain_check_availability(&pool, &p, input).await
             },
@@ -453,7 +453,7 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
     {
         let mut c = reg.resource("credentials", "credential", "Credentials");
         c.list(
-            "List credentials visible to the caller (admins: all; else org + global).",
+            "List credentials visible to the caller (admins: all; else their orgs' only — plan.ai's shared credentials are not listed; an admin can select them for you).",
             |pool: sqlx::PgPool, p, input: endpoints::credentials::CredentialListInput| async move {
                 endpoints::credentials::credential_list(&pool, &p, input).await
             },
@@ -912,7 +912,7 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             "relay_urls",
             Risk::ReadOnly,
             OnItem::No,
-            "List relay portal URLs reachable with a stored mac-mgmt credential's token (requires read access to the credential).",
+            "List relay portal URLs reachable with a stored mac-mgmt credential's token (credential org read; plan.ai's shared credentials only for admins or when already attached in a readable org).",
             |pool: sqlx::PgPool, p, input: endpoints::mac_mgmt::MacMgmtRelayUrlsInput| async move {
                 endpoints::mac_mgmt::mac_mgmt_relay_urls(&pool, &p, input).await
             },

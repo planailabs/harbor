@@ -20,18 +20,16 @@ struct CdCredOption {
 }
 
 #[server]
-async fn list_cd_creds_for_org() -> Result<Vec<CdCredOption>, ServerFnError> {
-    let _user = crate::web::user::current_user().await?;
+async fn list_cd_creds_for_org(selected: Vec<Uuid>) -> Result<Vec<CdCredOption>, ServerFnError> {
+    let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
-    let rows = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, name FROM credentials WHERE credential_type = 'changedetection' ORDER BY name",
+    let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
+        &pool, &user, &["changedetection"], &selected,
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name)| CdCredOption { id, name })
+        .map(|(id, name, _)| CdCredOption { id, name })
         .collect())
 }
 
@@ -207,7 +205,7 @@ pub fn OrganizationDetail(id: String) -> Element {
 
 #[component]
 fn DefaultCdCredSection(org_id: Uuid, current: Option<Uuid>) -> Element {
-    let cd_creds = use_server_future(list_cd_creds_for_org)?;
+    let cd_creds = use_server_future(move || list_cd_creds_for_org(current.into_iter().collect()))?;
     let cred_list: Vec<CdCredOption> = match &*cd_creds.read() {
         Some(Ok(c)) => c.clone(),
         _ => vec![],
