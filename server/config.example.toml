@@ -105,3 +105,15 @@ encryption_key = "CHANGE_ME_base64_encoded_32_byte_key"
 # model = "claude-haiku-4-5-20251001"
 # provider = "anthropic"
 # validator = true
+
+# Optional: signed-in users' own Zitadel access tokens as API/MCP bearers (the
+# plan.ai chat acting as them). Each is introspected at Zitadel, must be meant
+# for `project_id`, and acts as the user with its email, exactly as their web
+# session would. A verified email with no account yet gets one, as a first web
+# sign-in through the [[auth.providers]] entry with this issuer would
+# (`auto_create = false` to refuse instead).
+# [zitadel_bearer]
+# issuer = "https://id.plan.ai"
+# project_id = "xxx"
+# client_id = "xxx"       # the project's API application (introspection)
+# client_secret = "xxx"

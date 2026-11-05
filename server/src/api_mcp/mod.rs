@@ -127,13 +127,13 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
     use plan_ai_api_mcp::{OnItem, Registry, Risk};
     use std::sync::Arc;
 
-    let auth = Arc::new(auth::TokenAuthenticator::new(pool.clone()));
+    let auth = Arc::new(auth::BearerAuthenticator::new(pool.clone(), crate::config::try_config().and_then(|c| c.zitadel_bearer.as_ref())));
     let mut reg = Registry::new(auth)
         .info("Web Agency API", env!("CARGO_PKG_VERSION"))
         .instructions(
             "Web Agency admin API. Authenticate with a Bearer token (kind='admin' for global \
-             access, or kind='api' scoped to an organization). Tools are named <entity>_<action>, \
-             e.g. domain_list.",
+             access, or kind='api' scoped to an organization) or a signed-in user's Zitadel \
+             token (their organizations). Tools are named <entity>_<action>, e.g. domain_list.",
         );
 
     {

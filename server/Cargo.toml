@@ -46,7 +46,7 @@ pulldown-cmark = { version = "0.12", optional = true }
 rust-embed = { version = "8", features = ["include-exclude"], optional = true }
 thiserror = { version = "2", optional = true }
 plan-ai-auth = { path = "../common/plan-ai-auth" }
-plan-ai-api-mcp = { path = "../common/plan-ai-api-mcp", optional = true }
+plan-ai-api-mcp = { path = "../common/plan-ai-api-mcp", optional = true, features = ["zitadel"] }
 plan-ai-chat = { path = "../common/plan-ai-chat", features = ["postgres", "api-mcp"], optional = true }
 plan-ai-chat-ui = { path = "../common/plan-ai-chat-ui", optional = true }
 tokio-stream = { version = "0.1", features = ["sync"], optional = true }
