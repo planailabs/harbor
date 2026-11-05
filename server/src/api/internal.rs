@@ -104,8 +104,8 @@ struct RouteEntry {
     /// dispatches by host + longest-matching path_prefix.
     path_prefix: String,
     upstream: String,
-    /// When set, this is a static folder served by the agency origin: the proxy
-    /// proxies to `upstream` (the agency server), passes the Host through, and
+    /// When set, this is a static folder served by the Harbor origin: the proxy
+    /// proxies to `upstream` (the Harbor server), passes the Host through, and
     /// injects the internal token + this webspace id so the server serves the
     /// folder's files. Avoids the proxy needing filesystem access.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -163,7 +163,7 @@ struct AuthInfo {
     org_id: Option<uuid::Uuid>,
     /// For basic auth: the credential list the proxy gate verifies against. The
     /// proxy no longer receives the credentials themselves — validation happens
-    /// on the agency login form (see `api::basic_auth`).
+    /// on the Harbor login form (see `api::basic_auth`).
     #[serde(skip_serializing_if = "Option::is_none")]
     basic_list_id: Option<uuid::Uuid>,
 }
@@ -302,9 +302,9 @@ async fn get_routes(
     let mut earliest_token_expiry: Option<chrono::DateTime<chrono::Utc>> = None;
 
     let mut routes = vec![RouteEntry {
-        host: proxy_cfg.agency_domain.clone(),
+        host: proxy_cfg.domain.clone(),
         path_prefix: "/".to_string(),
-        upstream: proxy_cfg.agency_upstream.clone(),
+        upstream: proxy_cfg.upstream.clone(),
         static_webspace_id: None,
         relay: None,
         auth: None,
@@ -364,11 +364,11 @@ async fn get_routes(
         };
         let auth = build_auth_info(&host, &auth_mode, org_id, basic_list_id);
         if runtime.as_deref() == Some("static") {
-            // Served by the agency origin (the server), not the proxy's disk.
+            // Served by the Harbor origin (the server), not the proxy's disk.
             routes.push(RouteEntry {
                 host,
                 path_prefix,
-                upstream: proxy_cfg.agency_upstream.clone(),
+                upstream: proxy_cfg.upstream.clone(),
                 static_webspace_id: Some(ws_id.to_string()),
                 relay: None,
                 auth,
@@ -818,7 +818,7 @@ pub struct ProxyGateParams {
 
 /// OIDC proxy gate — mounted on the web router (behind OIDC auth middleware).
 /// The proxy redirects unauthenticated users here. After the user logs in on the
-/// agency domain, this endpoint validates org membership and redirects back to
+/// Harbor domain, this endpoint validates org membership and redirects back to
 /// the webspace with a signed token.
 pub async fn proxy_gate(
     axum::extract::Query(params): axum::extract::Query<ProxyGateParams>,

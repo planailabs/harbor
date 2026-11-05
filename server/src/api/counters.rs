@@ -16,19 +16,19 @@ use opentelemetry::{KeyValue, global};
 use uuid::Uuid;
 
 /// Metric scope for everything this server reports.
-const SCOPE: &str = "web-agency-server";
+const SCOPE: &str = "harbor-server";
 
 /// Metrics an org-scoped metrics token is allowed to see. Everything else is
 /// admin-only. Kept next to the definitions so a new per-org metric can't be
 /// added without deciding which side of the fence it falls on.
 pub const ORG_SCOPED_METRICS: &[&str] = &[
-    "web_agency_webspace_running",
-    "web_agency_reachability_http_ok",
-    "web_agency_reachability_ssl_ok",
-    "web_agency_reachability_proxy_ok",
-    "web_agency_reachability_latency_ms",
-    "web_agency_reachability_checked_at",
-    "web_agency_relay_token_mint_ok",
+    "harbor_webspace_running",
+    "harbor_reachability_http_ok",
+    "harbor_reachability_ssl_ok",
+    "harbor_reachability_proxy_ok",
+    "harbor_reachability_latency_ms",
+    "harbor_reachability_checked_at",
+    "harbor_relay_token_mint_ok",
 ];
 
 /// Prometheus label carrying the owning organization, used to scope a scrape.
@@ -141,7 +141,7 @@ pub fn register() {
     // ── Database-derived, refreshed at scrape time ──
 
     meter
-        .i64_observable_gauge("web_agency_webspace_running")
+        .i64_observable_gauge("harbor_webspace_running")
         .with_description("Whether the local webspace is running (1) or not (0)")
         .with_callback(|o| {
             for w in &DB_SNAPSHOT.lock().unwrap().webspaces {
@@ -168,17 +168,17 @@ pub fn register() {
 
     for (name, description, pick) in [
         (
-            "web_agency_reachability_http_ok",
+            "harbor_reachability_http_ok",
             "HTTP reachability (1=ok, 0=fail)",
             (|r: &Reachability| r.http_ok) as fn(&Reachability) -> bool,
         ),
         (
-            "web_agency_reachability_ssl_ok",
+            "harbor_reachability_ssl_ok",
             "SSL validity (1=ok, 0=fail)",
             |r| r.ssl_ok,
         ),
         (
-            "web_agency_reachability_proxy_ok",
+            "harbor_reachability_proxy_ok",
             "Proxy verification via .well-known (1=ok, 0=fail)",
             |r| r.proxy_ok,
         ),
@@ -195,7 +195,7 @@ pub fn register() {
     }
 
     meter
-        .f64_observable_gauge("web_agency_reachability_latency_ms")
+        .f64_observable_gauge("harbor_reachability_latency_ms")
         .with_description("Reachability check latency in milliseconds")
         .with_callback(|o| {
             for r in &DB_SNAPSHOT.lock().unwrap().reachability {
@@ -207,7 +207,7 @@ pub fn register() {
         .build();
 
     meter
-        .f64_observable_gauge("web_agency_reachability_checked_at")
+        .f64_observable_gauge("harbor_reachability_checked_at")
         .with_description("Unix timestamp of last reachability check")
         .with_callback(|o| {
             for r in &DB_SNAPSHOT.lock().unwrap().reachability {
@@ -217,7 +217,7 @@ pub fn register() {
         .build();
 
     meter
-        .i64_observable_gauge("web_agency_relay_token_mint_ok")
+        .i64_observable_gauge("harbor_relay_token_mint_ok")
         .with_description("Whether the last relay token mint succeeded (1) or failed (0)")
         .with_callback(|o| {
             for (hostname, result) in RELAY_MINT_RESULTS.lock().unwrap().iter() {
@@ -235,7 +235,7 @@ pub fn register() {
     // ── Per-cycle gauges ──
 
     meter
-        .i64_observable_gauge("web_agency_sync_last_errors")
+        .i64_observable_gauge("harbor_sync_last_errors")
         .with_description("Number of errors in the last sync cycle")
         .with_callback(|o| {
             let c = &COUNTERS;
@@ -255,7 +255,7 @@ pub fn register() {
         .build();
 
     meter
-        .i64_observable_gauge("web_agency_cert_renewal_last_results")
+        .i64_observable_gauge("harbor_cert_renewal_last_results")
         .with_description("Results from the last cert renewal tick")
         .with_callback(|o| {
             observe_status_pair(
@@ -267,7 +267,7 @@ pub fn register() {
         .build();
 
     meter
-        .i64_observable_gauge("web_agency_cert_issuance_last_results")
+        .i64_observable_gauge("harbor_cert_issuance_last_results")
         .with_description("Results from the last cert issuance tick")
         .with_callback(|o| {
             observe_status_pair(
@@ -281,7 +281,7 @@ pub fn register() {
     // ── Cumulative counters (exported as `<name>_total`) ──
 
     meter
-        .u64_observable_counter("web_agency_deployments")
+        .u64_observable_counter("harbor_deployments")
         .with_description("Total deployments since server start")
         .with_callback(|o| {
             o.observe(
@@ -296,7 +296,7 @@ pub fn register() {
         .build();
 
     meter
-        .u64_observable_counter("web_agency_relay_token_mint")
+        .u64_observable_counter("harbor_relay_token_mint")
         .with_description("Total relay token mint attempts since server start")
         .with_callback(|o| {
             o.observe(

@@ -24356,7 +24356,7 @@ pub mod types {
 }
 
 #[derive(Clone, Debug)]
-///Client for Cloudflare API (trimmed for web-agency)
+///Client for Cloudflare API (trimmed for Harbor)
 ///
 ///Version: 4.0.0
 pub struct Client {

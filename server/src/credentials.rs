@@ -17,7 +17,7 @@ use uuid::Uuid;
 pub fn validate_outbound_url(url: &str) -> anyhow::Result<()> {
     // Test escape hatch: integration/NixOS tests point credentials at mock
     // APIs on loopback. Never set in production.
-    let allow_private = std::env::var("WEB_AGENCY_ALLOW_PRIVATE_APIS").as_deref() == Ok("1");
+    let allow_private = std::env::var("HARBOR_ALLOW_PRIVATE_APIS").as_deref() == Ok("1");
     validate_outbound_url_impl(url, allow_private)
 }
 
@@ -280,7 +280,7 @@ pub(crate) mod pg_tests {
             // Workspace feature unification builds reqwest with rustls-no-provider.
             let _ = rustls::crypto::ring::default_provider().install_default();
 
-            let dir = std::env::temp_dir().join(format!("web-agency-test-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("harbor-test-{}", std::process::id()));
             let hosting = dir.join("hosting");
             std::fs::create_dir_all(&hosting).unwrap();
 
@@ -303,7 +303,7 @@ pub(crate) mod pg_tests {
 
             unsafe {
                 std::env::set_var("CONFIG_PATH", &config_path);
-                std::env::set_var("WEB_AGENCY_ALLOW_PRIVATE_APIS", "1");
+                std::env::set_var("HARBOR_ALLOW_PRIVATE_APIS", "1");
             }
             crate::config::load();
         });
@@ -452,7 +452,7 @@ pub(crate) mod pg_tests {
 
 #[cfg(test)]
 mod ssrf_tests {
-    // The pg_tests above set WEB_AGENCY_ALLOW_PRIVATE_APIS=1 process-wide, so
+    // The pg_tests above set HARBOR_ALLOW_PRIVATE_APIS=1 process-wide, so
     // exercise the check below the env escape hatch directly.
     fn validate_outbound_url(url: &str) -> anyhow::Result<()> {
         super::validate_outbound_url_impl(url, false)

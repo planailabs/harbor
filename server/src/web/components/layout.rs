@@ -115,7 +115,7 @@ pub fn Layout() -> Element {
             div { class: "flex-1 flex flex-col min-w-0 overflow-hidden",
                 // Topbar
                 header { class: "shrink-0 h-14 border-b border-border flex items-center px-6 gap-4",
-                    h1 { class: "text-lg font-semibold text-fg", "Web Agency" }
+                    h1 { class: "text-lg font-semibold text-fg", "Harbor" }
                     div { class: "flex-1" }
                     div { class: "flex items-center gap-1",
                         LanguagePicker {}
@@ -190,7 +190,7 @@ pub fn Layout() -> Element {
                 }
             }
 
-            // Context-aware agency chat: floating bubble + slide-in sidebar,
+            // Context-aware Harbor chat: floating bubble + slide-in sidebar,
             // available on every page (renders nothing when chat is disabled).
             plan_ai_chat_ui::sidebar::ChatSidebar {
                 page_context: use_route::<Route>().to_string(),

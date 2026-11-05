@@ -5,7 +5,7 @@ ordering_override: -20
 
 # API Tokens
 
-API tokens provide programmatic access to the web-agency server.
+API tokens provide programmatic access to the Harbor server.
 
 ## Token Kinds
 

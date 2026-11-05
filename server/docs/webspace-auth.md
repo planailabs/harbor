@@ -12,7 +12,7 @@ Non-Pages webspaces (Local, Relay Tunnel, Tunnel) can require authentication bef
 | Mode | Description |
 |------|-------------|
 | **None** | No authentication (default — except on [preview hosts](#preview-deployments)) |
-| **OIDC** | Users must log in via the agency's OIDC provider. Only members of the webspace's organization (any role) or admins can access. |
+| **OIDC** | Users must log in via Harbor's OIDC provider. Only members of the webspace's organization (any role) or admins can access. |
 | **HTTP Basic** | A styled sign-in page validating against a reusable credential list, with a cookie session shared across sites that use the same list. |
 
 Pages webspaces are served through Cloudflare and cannot use proxy-level auth.
@@ -39,9 +39,9 @@ default; an explicit auth mode on the webspace still overrides this.
 
 When a user visits an OIDC-protected webspace:
 
-1. The proxy redirects to the agency login page
+1. The proxy redirects to the Harbor login page
 2. The user authenticates via the configured OIDC provider (if not already logged in)
-3. The agency verifies the user is a member of the webspace's organization
+3. Harbor verifies the user is a member of the webspace's organization
 4. A signed session cookie is set on the webspace domain (valid 24 hours)
 5. Subsequent requests are served without re-authentication until the cookie expires
 
@@ -62,8 +62,8 @@ Because the session is tied to your identity (not a single site), **signing in o
 
 ### Signing out
 
-- **One area:** visit `…/<folder>/cgi-webagency/basic/logout`. This signs you out of that list only; other lists stay signed in.
-- **Everything:** open the session manager at `https://<agency-domain>/agency/basic/profile` to see every area you're signed in to and sign out of one or all of them.
+- **One area:** visit `…/<folder>/cgi-harbor/basic/logout`. This signs you out of that list only; other lists stay signed in.
+- **Everything:** open the session manager at `https://<harbor-domain>/harbor/basic/profile` to see every area you're signed in to and sign out of one or all of them.
 
 ### Control paths
 
@@ -71,10 +71,10 @@ Each Basic-protected folder exposes these paths (relative to the folder):
 
 | Path | Purpose |
 |------|---------|
-| `cgi-webagency/basic/login` | Start the sign-in flow (`?back=` sets where to return) |
-| `cgi-webagency/basic/logout` | Sign out of this area's list |
-| `cgi-webagency/basic/profile` | Show sign-in status for this area |
-| `cgi-webagency/basic` | JSON `{username, list_id, list_name}` when signed in, `401` otherwise — handy for client-side checks |
+| `cgi-harbor/basic/login` | Start the sign-in flow (`?back=` sets where to return) |
+| `cgi-harbor/basic/logout` | Sign out of this area's list |
+| `cgi-harbor/basic/profile` | Show sign-in status for this area |
+| `cgi-harbor/basic` | JSON `{username, list_id, list_name}` when signed in, `401` otherwise — handy for client-side checks |
 
 The session is verified on every request, so signing out takes effect immediately. Credentials are validated only at sign-in (the proxy never receives them); passwords are stored hashed with SHA-256.
 

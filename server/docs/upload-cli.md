@@ -3,32 +3,32 @@ audience: developer
 ordering_override: -45
 ---
 
-# Upload CLI (web-agency-upload)
+# Upload CLI (harbor-upload)
 
 A tiny CLI tool for deploying site folders to Cloudflare Pages webspaces. It tars the folder, uploads it to the deploy API, and waits for the deployment to complete.
 
 ## Installation
 
 ```bash
-cargo install --git https://git.plan.ai/plan-ai/mac-mgmt web-agency-upload
+cargo install --git https://git.plan.ai/plan-ai/mac-mgmt harbor-upload
 ```
 
 ## Usage
 
 ```bash
 # Minimal (token and URL from env, webspace from token scope)
-export WEB_AGENCY_TOKEN="your-deploy-token"
-export WEB_AGENCY_URL="https://your-server.example.com"
-web-agency-upload ./dist
+export HARBOR_TOKEN="your-deploy-token"
+export HARBOR_URL="https://your-server.example.com"
+harbor-upload ./dist
 
 # Explicit arguments
-web-agency-upload ./dist \
+harbor-upload ./dist \
   --token YOUR_TOKEN \
   --url https://your-server.example.com \
   --webspace-id 550e8400-e29b-41d4-a716-446655440000
 
 # Don't wait for deploy to finish
-web-agency-upload ./dist --no-wait
+harbor-upload ./dist --no-wait
 ```
 
 ## Arguments
@@ -36,9 +36,9 @@ web-agency-upload ./dist --no-wait
 | Argument | Env Variable | Required | Description |
 |----------|-------------|----------|-------------|
 | `PATH` | — | Yes | Directory to upload |
-| `--token` | `WEB_AGENCY_TOKEN` | Yes | Deploy token |
-| `--url` | `WEB_AGENCY_URL` | Yes | Server URL |
-| `--webspace-id` | `WEB_AGENCY_WEBSPACE_ID` | No | Webspace UUID. Auto-detected from token scope if omitted. |
+| `--token` | `HARBOR_TOKEN` | Yes | Deploy token |
+| `--url` | `HARBOR_URL` | Yes | Server URL |
+| `--webspace-id` | `HARBOR_WEBSPACE_ID` | No | Webspace UUID. Auto-detected from token scope if omitted. |
 | `--poll-interval` | — | No | Seconds between status polls (default: 3) |
 | `--no-wait` | — | No | Exit after upload without waiting |
 
@@ -51,7 +51,7 @@ For tokens scoped to "All webspaces", you must specify `--webspace-id`.
 ## Example Output
 
 ```
-$ web-agency-upload ./dist
+$ harbor-upload ./dist
 No --webspace-id specified, checking token scope...
 Using token's scoped webspace: my-site (550e8400-...)
 Packaging ./dist...
@@ -72,9 +72,9 @@ Deployment successful!
 ```yaml
 - name: Deploy
   env:
-    WEB_AGENCY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
-    WEB_AGENCY_URL: ${{ vars.SERVER_URL }}
-  run: web-agency-upload ./dist
+    HARBOR_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+    HARBOR_URL: ${{ vars.SERVER_URL }}
+  run: harbor-upload ./dist
 ```
 
 ### GitLab CI
@@ -82,8 +82,8 @@ Deployment successful!
 ```yaml
 deploy:
   script:
-    - web-agency-upload ./dist
+    - harbor-upload ./dist
   variables:
-    WEB_AGENCY_TOKEN: $DEPLOY_TOKEN
-    WEB_AGENCY_URL: $SERVER_URL
+    HARBOR_TOKEN: $DEPLOY_TOKEN
+    HARBOR_URL: $SERVER_URL
 ```

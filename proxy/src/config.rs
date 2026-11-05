@@ -10,7 +10,7 @@ struct ConfigFile {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
-    pub agency_domain: String,
+    pub domain: String,
     #[serde(default = "default_http_addr")]
     pub http_addr: String,
     #[serde(default = "default_https_addr")]
@@ -28,7 +28,7 @@ fn default_https_addr() -> String {
     "[::]:443".to_string()
 }
 fn default_internal_token_path() -> String {
-    "/var/lib/web-agency/internal.token".to_string()
+    "/var/lib/harbor-server/internal.token".to_string()
 }
 fn default_server_url() -> String {
     "http://127.0.0.1:7380".to_string()
@@ -36,7 +36,7 @@ fn default_server_url() -> String {
 
 impl ProxyConfig {
     /// Read the internal API token. The token file is provisioned by the
-    /// web-agency server and may not exist yet when the proxy starts, so we
+    /// Harbor server and may not exist yet when the proxy starts, so we
     /// wait for it to appear rather than crashing.
     pub fn internal_token(&self) -> String {
         let mut logged = false;

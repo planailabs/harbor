@@ -1,4 +1,4 @@
-//! Interactive agency chatbot — web-agency's instantiation of the reusable
+//! Interactive Harbor chatbot — Harbor's instantiation of the reusable
 //! [`plan_ai_chat::service`] chat agent over the api-mcp registry (domains,
 //! webspaces, credentials, action templates, ...), surfaced through the
 //! plan-ai-chat-ui sidebar.
@@ -59,18 +59,18 @@ pub async fn init(pool: sqlx::PgPool, cfg: &crate::config::ServerConfig) -> Resu
         registry,
         connector,
         service_cfg,
-        Arc::new(AgencyPromptBuilder),
+        Arc::new(HarborPromptBuilder),
     )
     .await?;
     let _ = CHAT.set(state);
-    plan_ai_chat_ui::backend::set_chat_backend(Arc::new(AgencyChatBackend));
+    plan_ai_chat_ui::backend::set_chat_backend(Arc::new(HarborChatBackend));
     Ok(())
 }
 
-struct AgencyPromptBuilder;
+struct HarborPromptBuilder;
 
 #[async_trait]
-impl SystemPromptBuilder for AgencyPromptBuilder {
+impl SystemPromptBuilder for HarborPromptBuilder {
     async fn build(&self, user: &ChatUserCtx, resumed: bool, state: &ChatState) -> String {
         let tool_index = tool_index(state.registry());
 
@@ -94,7 +94,7 @@ impl SystemPromptBuilder for AgencyPromptBuilder {
         let threshold = &state.config().risk_threshold;
 
         format!(
-            r#"You are the web-agency assistant: an operations agent for a web agency platform (domains, DNS via Cloudflare, domain registration, webspaces and static hosting, credentials, contacts, billing, change detection, and action templates).
+            r#"You are the Harbor assistant: an operations agent for Harbor, a web agency platform (domains, DNS via Cloudflare, domain registration, webspaces and static hosting, credentials, contacts, billing, change detection, and action templates).
 
 You are talking to {email}. {access_line}
 
@@ -118,7 +118,7 @@ You are talking to {email}. {access_line}
 
 // ── Sidebar backend ─────────────────────────────────────────────────────
 
-struct AgencyChatBackend;
+struct HarborChatBackend;
 
 fn state() -> BackendResult<ChatState> {
     chat_state().ok_or_else(|| "chat is not enabled".to_string())
@@ -138,7 +138,7 @@ fn parse_id(id: &str) -> BackendResult<uuid::Uuid> {
 }
 
 #[async_trait]
-impl ChatBackend for AgencyChatBackend {
+impl ChatBackend for HarborChatBackend {
     async fn context(&self) -> BackendResult<ChatContext> {
         if current_user().await.is_err() {
             return Ok(ChatContext {

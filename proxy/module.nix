@@ -6,19 +6,19 @@
 }:
 
 let
-  cfg = config.services.web-agency-proxy;
+  cfg = config.services.harbor-proxy;
   settingsFormat = pkgs.formats.toml { };
   configFile = settingsFormat.generate "proxy-config.toml" cfg.settings;
 in
 {
-  options.services.web-agency-proxy = {
-    enable = lib.mkEnableOption "web-agency reverse proxy";
+  options.services.harbor-proxy = {
+    enable = lib.mkEnableOption "Harbor reverse proxy";
 
-    package = lib.mkPackageOption pkgs "web-agency-proxy" { };
+    package = lib.mkPackageOption pkgs "harbor-proxy" { };
 
     internalTokenFile = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/web-agency-server/internal.token";
+      default = "/var/lib/harbor-server/internal.token";
       description = ''
         Root-readable path to the server's internal API token. Exposed to
         the proxy via systemd LoadCredential; the proxy reads it from its
@@ -30,14 +30,14 @@ in
       type = settingsFormat.type;
       default = { };
       description = ''
-        Configuration for web-agency-proxy in Nix attribute set form.
+        Configuration for harbor-proxy in Nix attribute set form.
         Rendered to config.toml. Only the [proxy] section is used.
       '';
       example = lib.literalExpression ''
         {
           proxy = {
-            agency_domain = "agency.example.com";
-            agency_upstream = "127.0.0.1:7380";
+            domain = "harbor.example.com";
+            upstream = "127.0.0.1:7380";
             http_addr = "[::]:80";
             https_addr = "[::]:443";
             server_url = "http://127.0.0.1:7380";
@@ -54,9 +54,9 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.services.web-agency-proxy = {
-      description = "web-agency reverse proxy (Pingora)";
-      after = [ "network.target" "web-agency-server.service" ];
+    systemd.services.harbor-proxy = {
+      description = "Harbor reverse proxy (Pingora)";
+      after = [ "network.target" "harbor-server.service" ];
       wants = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
@@ -68,13 +68,13 @@ in
         RestartSec = 5;
 
         DynamicUser = true;
-        StateDirectory = "web-agency-proxy";
-        SupplementaryGroups = [ "web-agency" ];
+        StateDirectory = "harbor-proxy";
+        SupplementaryGroups = [ "harbor" ];
 
         # The server's StateDirectory lives under /var/lib/private/<name>
         # (DynamicUser), whose 0700 root-owned parent blocks path traversal
         # for every other unit — a bind mount doesn't help because the
-        # /var/lib/web-agency-server symlink still resolves through it. Let
+        # /var/lib/harbor-server symlink still resolves through it. Let
         # systemd read the token as root instead and surface it in this
         # unit's credentials directory. Until the server has written the
         # token, LoadCredential fails the start and Restart/RestartSec
@@ -106,10 +106,10 @@ in
     };
 
     # Fallback defaults when the proxy is used standalone (without the server module).
-    services.web-agency-proxy.settings.proxy = {
-      internal_token_path = lib.mkDefault "/run/credentials/web-agency-proxy.service/internal.token";
+    services.harbor-proxy.settings.proxy = {
+      internal_token_path = lib.mkDefault "/run/credentials/harbor-proxy.service/internal.token";
       server_url = lib.mkDefault "http://127.0.0.1:7380";
-      agency_upstream = lib.mkDefault "127.0.0.1:7380";
+      upstream = lib.mkDefault "127.0.0.1:7380";
     };
 
     networking.firewall = lib.mkIf cfg.openFirewall {

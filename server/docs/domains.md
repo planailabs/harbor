@@ -5,7 +5,7 @@ ordering_override: -60
 
 # Domain Management
 
-The web agency manages domains across Cloudflare and Spaceship registrars with automatic DNS sync, nameserver configuration, and expiry tracking.
+Harbor manages domains across Cloudflare and Spaceship registrars with automatic DNS sync, nameserver configuration, and expiry tracking.
 
 ## Adding Domains
 

@@ -2,7 +2,7 @@
 //!
 //! Every 15 minutes, checks each bound hostname for:
 //! - HTTP(S) reachability and SSL validity
-//! - Proxy verification via `/.well-known/web-agency.json`
+//! - Proxy verification via `/.well-known/harbor.json`
 //!
 //! Results are stored in `reachability_results` for the metrics endpoint.
 
@@ -118,7 +118,7 @@ async fn run_checks(pool: &PgPool) -> anyhow::Result<()> {
 fn build_strict_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
-        .user_agent("web-agency-reachability/1.0")
+        .user_agent("harbor-reachability/1.0")
         .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .expect("failed to build strict HTTP client")
@@ -129,7 +129,7 @@ fn build_strict_client() -> reqwest::Client {
 fn build_insecure_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
-        .user_agent("web-agency-reachability/1.0")
+        .user_agent("harbor-reachability/1.0")
         .redirect(reqwest::redirect::Policy::limited(5))
         .danger_accept_invalid_certs(true)
         .build()
@@ -143,7 +143,7 @@ async fn check_host(
     host: &WebspaceHost,
 ) {
     let url = format!("https://{}/", host.hostname);
-    let well_known_url = format!("https://{}/.well-known/web-agency.json", host.hostname);
+    let well_known_url = format!("https://{}/.well-known/harbor.json", host.hostname);
 
     let start = std::time::Instant::now();
     let mut http_ok = false;
@@ -177,7 +177,7 @@ async fn check_host(
         }
     }
 
-    // Check .well-known/web-agency.json (use the client appropriate for SSL status)
+    // Check .well-known/harbor.json (use the client appropriate for SSL status)
     let wk_client = if ssl_ok {
         strict_client
     } else {
@@ -187,8 +187,8 @@ async fn check_host(
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.text().await {
                 let expected_service = match host.kind.as_str() {
-                    "cloudflare" => "web-agency-pages",
-                    _ => "web-agency-proxy",
+                    "cloudflare" => "harbor-pages",
+                    _ => "harbor-proxy",
                 };
                 proxy_ok = body.contains(expected_service);
             }

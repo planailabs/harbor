@@ -971,12 +971,12 @@ async fn sync_tag_notifications(
     tag_uuid: Uuid,
     secret: &str,
 ) -> anyhow::Result<()> {
-    let agency_domain = crate::config::config()
+    let harbor_domain = crate::config::config()
         .proxy
         .as_ref()
-        .map(|p| p.agency_domain.as_str())
+        .map(|p| p.domain.as_str())
         .unwrap_or("localhost");
-    let webhook_url = format!("json://https://{agency_domain}/api/changedetection/{secret}");
+    let webhook_url = format!("json://https://{harbor_domain}/api/changedetection/{secret}");
 
     // Check current tag to see if notification_urls already includes our webhook.
     let tag = client

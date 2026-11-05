@@ -21,28 +21,28 @@ import tempfile
 import requests
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-WEB_AGENCY_DIR = os.path.dirname(SCRIPT_DIR)
-ROOT_DIR = os.path.dirname(WEB_AGENCY_DIR)
+HARBOR_DIR = os.path.dirname(SCRIPT_DIR)
+ROOT_DIR = os.path.dirname(HARBOR_DIR)
 
 CF_SPEC_URL = "https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.yaml"
-CF_YAML = os.path.join(WEB_AGENCY_DIR, "openapi-cloudflare.yaml")
-CF_TRIMMED = os.path.join(WEB_AGENCY_DIR, "cloudflare-api", "openapi-trimmed.json")
-CF_OUTPUT = os.path.join(WEB_AGENCY_DIR, "cloudflare-api")
+CF_YAML = os.path.join(HARBOR_DIR, "openapi-cloudflare.yaml")
+CF_TRIMMED = os.path.join(HARBOR_DIR, "cloudflare-api", "openapi-trimmed.json")
+CF_OUTPUT = os.path.join(HARBOR_DIR, "cloudflare-api")
 
 SS_DOCS_URL = "https://docs.spaceship.dev"
-SS_JSON = os.path.join(WEB_AGENCY_DIR, "openapi-spaceship.json")
-SS_TRIMMED = os.path.join(WEB_AGENCY_DIR, "spaceship-api", "openapi-trimmed.json")
-SS_OUTPUT = os.path.join(WEB_AGENCY_DIR, "spaceship-api")
+SS_JSON = os.path.join(HARBOR_DIR, "openapi-spaceship.json")
+SS_TRIMMED = os.path.join(HARBOR_DIR, "spaceship-api", "openapi-trimmed.json")
+SS_OUTPUT = os.path.join(HARBOR_DIR, "spaceship-api")
 
 CD_DOCS_URL = "https://changedetection.io/docs/api_v1/index.html"
-CD_JSON = os.path.join(WEB_AGENCY_DIR, "openapi-changedetection.json")
-CD_TRIMMED = os.path.join(WEB_AGENCY_DIR, "changedetection-api", "openapi-trimmed.json")
-CD_OUTPUT = os.path.join(WEB_AGENCY_DIR, "changedetection-api")
+CD_JSON = os.path.join(HARBOR_DIR, "openapi-changedetection.json")
+CD_TRIMMED = os.path.join(HARBOR_DIR, "changedetection-api", "openapi-trimmed.json")
+CD_OUTPUT = os.path.join(HARBOR_DIR, "changedetection-api")
 
 DF_SPEC_URL = "https://github.com/dataforseo/OpenApiDocumentation/raw/refs/heads/master/openapi_specification.yaml"
-DF_YAML = os.path.join(WEB_AGENCY_DIR, "openapi-dataforseo.yaml")
-DF_TRIMMED = os.path.join(WEB_AGENCY_DIR, "dataforseo-api", "openapi-trimmed.json")
-DF_OUTPUT = os.path.join(WEB_AGENCY_DIR, "dataforseo-api")
+DF_YAML = os.path.join(HARBOR_DIR, "openapi-dataforseo.yaml")
+DF_TRIMMED = os.path.join(HARBOR_DIR, "dataforseo-api", "openapi-trimmed.json")
+DF_OUTPUT = os.path.join(HARBOR_DIR, "dataforseo-api")
 
 # Paths we need from the Cloudflare API
 CF_KEEP_PATHS = [
@@ -319,7 +319,7 @@ def trim_cloudflare():
     # Build trimmed spec
     trimmed = {
         "openapi": spec.get("openapi", "3.0.3"),
-        "info": {"title": "Cloudflare API (trimmed for web-agency)", "version": "4.0.0"},
+        "info": {"title": "Cloudflare API (trimmed for Harbor)", "version": "4.0.0"},
         "servers": spec.get("servers", []),
         "paths": filtered_paths,
         "components": {

@@ -4,7 +4,7 @@
 }:
 
 rustPlatform.buildRustPackage {
-  pname = "web-agency-mocks";
+  pname = "harbor-mocks";
   version = "0.1.0";
   src = ../.;
   cargoLock.lockFile = ../Cargo.lock;
@@ -19,7 +19,7 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "Web agency provider API mocks – Spaceship, Cloudflare and ChangeDetection.io";
+    description = "Harbor provider API mocks – Spaceship, Cloudflare and ChangeDetection.io";
     license = lib.licenses.asl20;
   };
 }

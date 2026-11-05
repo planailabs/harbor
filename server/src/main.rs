@@ -220,7 +220,7 @@ fn main() {
         // Logs to stdout always; spans to OTLP when OTEL_EXPORTER_OTLP_ENDPOINT
         // is set; metrics collected either way (the /api/metrics scrape reads
         // the same meter provider).
-        mac_mgmt_common::otel::init("web-agency-server", "info");
+        mac_mgmt_common::otel::init("harbor-server", "info");
         api::counters::register();
     }
 
@@ -315,7 +315,7 @@ fn main() {
                     axum::routing::get(crate::chat_sse::view_session_sse),
                 );
 
-            // Interactive agency chatbot (no-op when [chat] is disabled).
+            // Interactive Harbor chatbot (no-op when [chat] is disabled).
             if let Ok(pool) = crate::server_pool() {
                 if let Err(e) = crate::chat::init(pool, config::load()).await {
                     tracing::error!("failed to initialize chat: {e:#}");
@@ -380,9 +380,9 @@ fn main() {
 
             // Public basic-auth gate pages (login/logout/profile). These are
             // reached by users of basic-auth-protected webspaces and must NOT
-            // sit behind the agency's OIDC require_auth, so they're merged
+            // sit behind Harbor's OIDC require_auth, so they're merged
             // separately from web_router.
-            let basic_auth_router = crate::api::basic_auth::agency_router(
+            let basic_auth_router = crate::api::basic_auth::harbor_router(
                 crate::server_pool().expect("pool for basic-auth pages"),
             );
 
@@ -408,8 +408,8 @@ fn main() {
                     .layer(axum::middleware::from_fn(otel_http::record_request_metrics))
             };
 
-            // The agency app router (Dioxus + APIs, with their own auth).
-            let agency_router = axum::Router::new()
+            // The Harbor app router (Dioxus + APIs, with their own auth).
+            let harbor_router = axum::Router::new()
                 .merge(deploy_router)
                 .merge(internal_router)
                 .merge(metrics_router)
@@ -419,19 +419,19 @@ fn main() {
                 .route_service("/mcp", mcp_service.clone())
                 .route_service("/mcp/", mcp_service)
                 .merge(web_router);
-            let agency_router = observe(agency_router);
+            let harbor_router = observe(harbor_router);
 
             // A fully separate router for proxy-forwarded static webspace
-            // requests (no agency auth/Dioxus middleware).
+            // requests (no Harbor auth/Dioxus middleware).
             let webspace_router = observe(crate::api::static_serve::router());
 
             // Steer by the webspace header: requests carrying it go to the
-            // webspace router, everything else to the agency router. Expressed
+            // webspace router, everything else to the Harbor router. Expressed
             // as a fallback service (not a wrapping layer) so the two routers
             // stay fully independent.
             use tower::ServiceExt; // oneshot
             let dispatch = tower::service_fn(move |req: axum::extract::Request| {
-                let agency = agency_router.clone();
+                let harbor = harbor_router.clone();
                 let webspace = webspace_router.clone();
                 async move {
                     if req
@@ -440,7 +440,7 @@ fn main() {
                     {
                         webspace.oneshot(req).await
                     } else {
-                        agency.oneshot(req).await
+                        harbor.oneshot(req).await
                     }
                 }
             });

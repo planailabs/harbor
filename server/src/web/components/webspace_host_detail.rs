@@ -2,8 +2,8 @@
 //!
 //! A webspace-host owns the hostname: domain bindings, the CNAME flow, and
 //! ChangeDetection all live here. Its `webspace` children are path-mounted
-//! folders. `kind` is either `proxy` (folders route through web-agency-proxy;
-//! CNAME → agency_domain) or `cloudflare` (a single Pages-project folder at `/`;
+//! folders. `kind` is either `proxy` (folders route through harbor-proxy;
+//! CNAME → harbor_domain) or `cloudflare` (a single Pages-project folder at `/`;
 //! CNAME → {project}.pages.dev).
 
 use dioxus::prelude::*;

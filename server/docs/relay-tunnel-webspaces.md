@@ -5,7 +5,7 @@ ordering_override: -38
 
 # Relay & Tunnel Webspaces
 
-In addition to [Cloudflare Pages](/docs/cloudflare-pages), the web agency can proxy traffic to external upstreams via **Relay Tunnel** and **Tunnel** webspaces. Both are served through the built-in Pingora reverse proxy with automatic ACME TLS certificates.
+In addition to [Cloudflare Pages](/docs/cloudflare-pages), Harbor can proxy traffic to external upstreams via **Relay Tunnel** and **Tunnel** webspaces. Both are served through the built-in Pingora reverse proxy with automatic ACME TLS certificates.
 
 ## Hosting Types
 
@@ -38,7 +38,7 @@ Proxies traffic directly to any upstream URL without relay authentication. Use t
 
 On the webspace detail page, bind domains or subdomains in the **Domain Bindings** section. When binding a domain:
 
-- A CNAME record pointing to the agency domain is automatically created in the domain's Cloudflare zone
+- A CNAME record pointing to the Harbor domain is automatically created in the domain's Cloudflare zone
 - The proxy automatically requests an ACME TLS certificate for the hostname
 - The **CNAME** column shows whether the DNS record is properly configured, with a **Fix** button if missing
 

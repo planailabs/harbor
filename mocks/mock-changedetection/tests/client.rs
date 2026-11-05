@@ -89,7 +89,7 @@ async fn tag_lifecycle() {
 
     // Update notification_urls (as sync_tag_notifications does) and verify
     // the title survives the partial update.
-    let webhook = "json://https://agency.example/api/changedetection/s3cr3t";
+    let webhook = "json://https://harbor.example/api/changedetection/s3cr3t";
     let update: types::Tag = serde_json::from_value(serde_json::json!({
         "notification_urls": [webhook],
         "notification_format": "markdown",

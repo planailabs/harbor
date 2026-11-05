@@ -2,7 +2,7 @@
 //!
 //! Static content is deployed to per-webspace directories under the
 //! configured webroot. TLS termination and reverse proxying are handled by
-//! the separate `web-agency-proxy` binary (Pingora-based). Process runtimes
+//! the separate `harbor-proxy` binary (Pingora-based). Process runtimes
 //! (Node.js, Docker) were unwired stubs and have been removed; restore from
 //! git history if that feature lands.
 

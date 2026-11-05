@@ -9,7 +9,7 @@
 //!
 //! [`BearerAuthenticator`] tries that first and, when `[zitadel_bearer]` is
 //! configured, falls back to Zitadel introspection: a signed-in user's Zitadel
-//! access token acts as that user's web session ([`AgencyUsers`]), the account
+//! access token acts as that user's web session ([`HarborUsers`]), the account
 //! created on first use as a first web sign-in would.
 
 use std::collections::HashSet;
@@ -98,7 +98,7 @@ impl TokenAuthenticator {
     }
 }
 
-/// The API's authenticator: web-agency's own tokens first, then — when
+/// The API's authenticator: Harbor's own tokens first, then — when
 /// configured — Zitadel access tokens of signed-in users.
 pub struct BearerAuthenticator {
     tokens: TokenAuthenticator,
@@ -116,7 +116,7 @@ impl BearerAuthenticator {
                 cache_secs: 60,
             };
             let auth = crate::config::config().auth.as_ref();
-            let users = Arc::new(AgencyUsers {
+            let users = Arc::new(HarborUsers {
                 resolver: crate::web::auth::PgUserResolver::new(
                     pool.clone(),
                     auth.map(|a| a.admin_emails.clone()).unwrap_or_default(),
@@ -146,7 +146,7 @@ impl Authenticator for BearerAuthenticator {
         zitadel.authenticate(bearer).await.map_err(|e| match e {
             ApiError::Internal(why) => {
                 tracing::warn!(reason = %why, "zitadel bearer could not be verified");
-                ApiError::unauthorized("invalid or expired token (not a web-agency token, and Zitadel could not verify it)")
+                ApiError::unauthorized("invalid or expired token (not a Harbor token, and Zitadel could not verify it)")
             }
             other => other,
         })
@@ -172,22 +172,22 @@ fn provider_for(issuer: &str, auth: Option<&plan_ai_auth::AuthConfig>) -> Provid
         })
 }
 
-/// Maps a Zitadel identity to the web-agency user with its email — their web
+/// Maps a Zitadel identity to the Harbor user with its email — their web
 /// session's principal — creating it through the web sign-in when it has none.
-pub struct AgencyUsers {
+pub struct HarborUsers {
     pool: PgPool,
     resolver: Arc<crate::web::auth::PgUserResolver>,
     sign_up: Option<ProviderMeta>,
 }
 
-impl AgencyUsers {
+impl HarborUsers {
     async fn sign_up(&self, email: &str, identity: &Identity) -> Result<WebUser, ApiError> {
         let Some(provider) = &self.sign_up else {
-            return Err(ApiError::forbidden(format!("{email} has no web-agency account — sign in to it once first")));
+            return Err(ApiError::forbidden(format!("{email} has no Harbor account — sign in to it once first")));
         };
         if identity.email_verified != Some(true) {
             return Err(ApiError::forbidden(format!(
-                "{email} has no web-agency account, and none is made for an address Zitadel does not call verified"
+                "{email} has no Harbor account, and none is made for an address Zitadel does not call verified"
             )));
         }
         let claims = serde_json::Value::Object(identity.claims.clone());
@@ -200,11 +200,11 @@ impl AgencyUsers {
         match provider.sign_in(self.resolver.as_ref(), &sign_in).await {
             Ok(user) => {
                 tracing::info!(email, user_id = %user.id, zitadel_user_id = %identity.user_id,
-                    "web-agency account created for a Zitadel bearer token");
+                    "Harbor account created for a Zitadel bearer token");
                 Ok(user)
             }
             Err(SignInError::Refused(why)) => Err(ApiError::forbidden(format!(
-                "{email} has no web-agency account, and signing in would be refused: {why}"
+                "{email} has no Harbor account, and signing in would be refused: {why}"
             ))),
             Err(SignInError::Failed(e)) => Err(ApiError::internal(format!("could not create the account for {email}: {e:#}"))),
         }
@@ -212,7 +212,7 @@ impl AgencyUsers {
 }
 
 #[async_trait]
-impl IdentityMapper for AgencyUsers {
+impl IdentityMapper for HarborUsers {
     async fn principal(&self, identity: &Identity) -> Result<Principal, ApiError> {
         let email = identity.email.as_deref().filter(|e| !e.is_empty()).ok_or_else(|| {
             ApiError::unauthorized("the token carries no email; request it with the `email` scope")

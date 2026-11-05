@@ -5,7 +5,7 @@ ordering_override: 50
 
 # Testing & Provider Mocks
 
-Developer reference for the web-agency test stack: three mock provider APIs,
+Developer reference for the Harbor test stack: three mock provider APIs,
 Postgres-backed server tests, and the full-workload NixOS VM test. Everything
 here runs offline — no real Cloudflare, Spaceship, or changedetection.io
 account is touched.
@@ -34,7 +34,7 @@ Two pieces, both test-only:
 1. **Per-credential `api_url`** — cloudflare, spaceship, and changedetection
    credential JSON all accept an optional `api_url` key that overrides the
    production base URL (`server/src/credentials.rs`).
-2. **`WEB_AGENCY_ALLOW_PRIVATE_APIS=1`** — the SSRF guard
+2. **`HARBOR_ALLOW_PRIVATE_APIS=1`** — the SSRF guard
    (`validate_outbound_url`) rejects loopback/private URLs by design; this
    environment variable is the escape hatch that lets credentials point at
    mocks on `127.0.0.1`. Never set it in production.
@@ -48,7 +48,7 @@ certificates against a local [pebble](https://github.com/letsencrypt/pebble).
 ```
 cargo test --workspace --locked          # everything below
 cargo test -p mock-cloudflare            # mock ↔ generated-client contract
-cargo test -p web-agency-server --features server   # Postgres-backed
+cargo test -p harbor-server --features server   # Postgres-backed
 ```
 
 The server's `credentials::pg_tests` boot a throwaway Postgres per test via
@@ -65,7 +65,7 @@ nix build .#checks.x86_64-linux.full -L
 ```
 
 One VM running the real deployment shape: PostgreSQL (auto-provisioned by
-`server/module.nix`), `web-agency-server`, the Pingora proxy, all three mocks
+`server/module.nix`), `harbor-server`, the Pingora proxy, all three mocks
 as systemd services, and pebble as ACME directory (its CA installed via
 `security.pki.certificateFiles`; `PEBBLE_VA_ALWAYS_VALID=1` because the DNS-01
 TXT record lands in the mock Cloudflare, which pebble cannot resolve).
@@ -74,7 +74,7 @@ The test script seeds an admin token, creates the three credentials over the
 API, then exercises: spaceship availability + discovery, a Cloudflare zone +
 DNS record round-trip (create → sync back → linked record), the
 changedetection sub-URL watch flow, certificate issuance through pebble, and
-proxy routing of the agency domain.
+proxy routing of the Harbor domain.
 
 ## CI
 

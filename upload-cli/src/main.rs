@@ -1,12 +1,12 @@
-//! web-agency-upload: upload a folder to a web-agency webspace.
+//! harbor-upload: upload a folder to a Harbor webspace.
 //!
 //! Works for any webspace that accepts tarball deploys — Cloudflare Pages
 //! (deployed via wrangler) and local static folders (extracted to disk).
 //!
 //! Usage:
-//!   web-agency-upload ./dist
-//!   web-agency-upload --webspace-id UUID ./dist
-//!   WEB_AGENCY_TOKEN=... WEB_AGENCY_URL=... web-agency-upload ./dist
+//!   harbor-upload ./dist
+//!   harbor-upload --webspace-id UUID ./dist
+//!   HARBOR_TOKEN=... HARBOR_URL=... harbor-upload ./dist
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -18,29 +18,29 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
-    name = "web-agency-upload",
+    name = "harbor-upload",
     version,
-    about = "Upload a site folder to a web-agency webspace"
+    about = "Upload a site folder to a Harbor webspace"
 )]
 struct Cli {
     /// Directory to upload (will be tarred and gzipped)
     path: PathBuf,
 
-    /// Deploy token (or set WEB_AGENCY_TOKEN env)
-    #[arg(long, env = "WEB_AGENCY_TOKEN")]
+    /// Deploy token (or set HARBOR_TOKEN env)
+    #[arg(long, env = "HARBOR_TOKEN")]
     token: String,
 
-    /// Server URL (or set WEB_AGENCY_URL env)
-    #[arg(long, env = "WEB_AGENCY_URL")]
+    /// Server URL (or set HARBOR_URL env)
+    #[arg(long, env = "HARBOR_URL")]
     url: String,
 
     /// Webspace ID to deploy to. If omitted, uses the token's scoped webspace.
-    #[arg(long, env = "WEB_AGENCY_WEBSPACE_ID")]
+    #[arg(long, env = "HARBOR_WEBSPACE_ID")]
     webspace_id: Option<String>,
 
     /// Branch name for the deployment (e.g. "main", "preview", "staging").
     /// Cloudflare Pages only; ignored for local static folders.
-    #[arg(long, env = "WEB_AGENCY_BRANCH")]
+    #[arg(long, env = "HARBOR_BRANCH")]
     branch: Option<String>,
 
     /// Poll interval in seconds when waiting for deployment
@@ -109,7 +109,7 @@ fn main() -> Result<()> {
                 }
                 None => bail!(
                     "token is not scoped to a specific webspace. \
-                     Use --webspace-id or WEB_AGENCY_WEBSPACE_ID to specify one."
+                     Use --webspace-id or HARBOR_WEBSPACE_ID to specify one."
                 ),
             }
         }

@@ -152,19 +152,19 @@ mod tests {
         let theirs = Uuid::new_v4();
         let mut families = vec![
             family(
-                "web_agency_webspace_running",
+                "harbor_webspace_running",
                 &[&mine.to_string(), &theirs.to_string()],
             ),
             // Per-org metric, but no series of ours → drops out entirely.
-            family("web_agency_relay_token_mint_ok", &[&theirs.to_string()]),
+            family("harbor_relay_token_mint_ok", &[&theirs.to_string()]),
             // Admin-only.
-            family("web_agency_deployments_total", &[]),
+            family("harbor_deployments_total", &[]),
         ];
 
         scope_to_org(&mut families, mine);
 
         assert_eq!(families.len(), 1);
-        assert_eq!(families[0].name(), "web_agency_webspace_running");
+        assert_eq!(families[0].name(), "harbor_webspace_running");
         assert_eq!(families[0].get_metric().len(), 1);
         assert_eq!(families[0].get_metric()[0].get_label()[0].value(), mine.to_string());
     }

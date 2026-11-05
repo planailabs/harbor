@@ -1,6 +1,6 @@
 //! Stateful in-memory mock of the changedetection.io API.
 //!
-//! Covers the operations the web-agency server uses: system info, watch
+//! Covers the operations the Harbor server uses: system info, watch
 //! create/list/update/delete and tag create/list/get/update/delete.
 
 use std::collections::HashMap;

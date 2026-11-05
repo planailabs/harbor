@@ -330,7 +330,7 @@ async fn upload_deploy(
     }
 
     let upload = tempfile::Builder::new()
-        .prefix("web-agency-deploy-")
+        .prefix("harbor-deploy-")
         .suffix(".tar.gz")
         .tempfile()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("tempfile: {e}")))?;
@@ -624,8 +624,8 @@ async fn run_wrangler_deploy(
         return;
     }
 
-    // Inject .well-known/web-agency.json so reachability checks can verify the site
-    inject_well_known(&extract_dir, "web-agency-pages").await;
+    // Inject .well-known/harbor.json so reachability checks can verify the site
+    inject_well_known(&extract_dir, "harbor-pages").await;
 
     let mut wrangler_args = vec![
         "pages".to_string(),
@@ -787,13 +787,13 @@ async fn gzip_isize(path: &std::path::Path) -> Option<u64> {
     Some(u32::from_le_bytes(buf) as u64)
 }
 
-/// Write the `.well-known/web-agency.json` marker so reachability checks can
+/// Write the `.well-known/harbor.json` marker so reachability checks can
 /// verify the served site reports the expected service.
 async fn inject_well_known(root: &std::path::Path, service: &str) {
     let dir = root.join(".well-known");
     let _ = tokio::fs::create_dir_all(&dir).await;
     let _ = tokio::fs::write(
-        dir.join("web-agency.json"),
+        dir.join("harbor.json"),
         format!("{{\"service\":\"{service}\"}}").into_bytes(),
     )
     .await;
@@ -833,7 +833,7 @@ async fn run_static_deploy(
         return;
     }
 
-    inject_well_known(&staging, "web-agency-proxy").await;
+    inject_well_known(&staging, "harbor-proxy").await;
 
     // Atomic swap: move the live dir aside, promote staging, then drop the old.
     let dest2 = dest.clone();

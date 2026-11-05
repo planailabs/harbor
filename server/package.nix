@@ -25,13 +25,13 @@ let
 in
 
 rustPlatform.buildRustPackage {
-  pname = "web-agency-server";
+  pname = "harbor-server";
   version = "0.1.0";
   src = ../.;
   cargoLock.lockFile = ../Cargo.lock;
   cargoLock.outputHashes = import ../extra-hashes.nix;
 
-  cargoBuildFlags = [ "-p" "web-agency-server" ];
+  cargoBuildFlags = [ "-p" "harbor-server" ];
 
   nativeBuildInputs = [
     pkg-config
@@ -62,7 +62,7 @@ rustPlatform.buildRustPackage {
     npm run tailwind:build
     popd
 
-    dx build --release --fullstack --package web-agency-server
+    dx build --release --fullstack --package harbor-server
 
     runHook postBuild
   '';
@@ -71,14 +71,14 @@ rustPlatform.buildRustPackage {
     runHook preInstall
 
     mkdir -p $out/bin $out/share
-    cp -r target/dx/web-agency-server/release/web $out/share/web-agency-server
+    cp -r target/dx/harbor-server/release/web $out/share/harbor-server
 
     # Wrap the binary so wrangler is on PATH (needed for Pages deployments)
-    if [ -e $out/share/web-agency-server/web-agency-server ]; then
-      makeWrapper $out/share/web-agency-server/web-agency-server $out/bin/web-agency-server \
+    if [ -e $out/share/harbor-server/harbor-server ]; then
+      makeWrapper $out/share/harbor-server/harbor-server $out/bin/harbor-server \
         --prefix PATH : ${lib.makeBinPath [ wrangler ]}
     else
-      makeWrapper $out/share/web-agency-server/server $out/bin/web-agency-server \
+      makeWrapper $out/share/harbor-server/server $out/bin/harbor-server \
         --prefix PATH : ${lib.makeBinPath [ wrangler ]}
     fi
 
@@ -86,8 +86,8 @@ rustPlatform.buildRustPackage {
   '';
 
   meta = {
-    description = "Web agency server – domain, DNS, and Cloudflare Pages management";
+    description = "Harbor server – domain, DNS, and Cloudflare Pages management";
     license = lib.licenses.asl20;
-    mainProgram = "web-agency-server";
+    mainProgram = "harbor-server";
   };
 }

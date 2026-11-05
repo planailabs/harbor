@@ -1,6 +1,6 @@
-// Minimal demo of the cgi-webagency/basic gate: show who's signed in + log out.
+// Minimal demo of the cgi-harbor/basic gate: show who's signed in + log out.
 // Paths are relative, so this works under whatever folder the app is mounted at
-// (e.g. /static/ → /static/cgi-webagency/basic). Cookies ride along same-origin.
+// (e.g. /static/ → /static/cgi-harbor/basic). Cookies ride along same-origin.
 
 const app = document.getElementById("app");
 
@@ -18,18 +18,18 @@ function back() {
 function renderSignedOut() {
   app.replaceChildren(
     el("p", "Not signed in."),
-    Object.assign(el("a", "Sign in"), { href: `cgi-webagency/basic/login?back=${back()}` }),
+    Object.assign(el("a", "Sign in"), { href: `cgi-harbor/basic/login?back=${back()}` }),
   );
 }
 
 function renderSignedIn(info) {
   const logout = el("button", "Log out");
   logout.addEventListener("click", () => {
-    location.href = `cgi-webagency/basic/logout?back=${back()}`;
+    location.href = `cgi-harbor/basic/logout?back=${back()}`;
   });
 
   const profile = Object.assign(el("a", "View profile"), {
-    href: `cgi-webagency/basic/profile?back=${back()}`,
+    href: `cgi-harbor/basic/profile?back=${back()}`,
   });
   const profileP = el("p");
   profileP.append(profile);
@@ -44,7 +44,7 @@ function renderSignedIn(info) {
 
 async function load() {
   try {
-    const res = await fetch("cgi-webagency/basic", { headers: { accept: "application/json" } });
+    const res = await fetch("cgi-harbor/basic", { headers: { accept: "application/json" } });
     if (res.status === 401) return renderSignedOut();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     renderSignedIn(await res.json());

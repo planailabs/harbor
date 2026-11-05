@@ -1,14 +1,14 @@
-//! OIDC auth integration for web-agency-server.
+//! OIDC auth integration for harbor-server.
 //!
 //! Implements the `UserResolver` trait from `plan-ai-auth` to upsert users
-//! into the web-agency database and resolve org memberships.
+//! into the Harbor database and resolve org memberships.
 
 use plan_ai_auth::{OrgMembership, WebUser};
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// Web-agency-specific user resolver backed by PostgreSQL.
+/// Harbor-specific user resolver backed by PostgreSQL.
 pub struct PgUserResolver {
     pool: PgPool,
     admin_emails: Vec<String>,

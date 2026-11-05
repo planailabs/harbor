@@ -14,7 +14,7 @@ pub struct ServerConfig {
     pub auth: Option<AuthConfig>,
     pub secrets: Option<SecretsConfig>,
     pub proxy: Option<ProxyConfig>,
-    /// Interactive agency chatbot (agent over the api-mcp tool surface).
+    /// Interactive Harbor chatbot (agent over the api-mcp tool surface).
     #[serde(default)]
     pub chat: Option<ChatConfig>,
     /// Unified model list (`[[models]]`). Entries may set `validator = true`,
@@ -89,7 +89,7 @@ impl ServerConfig {
     }
 }
 
-/// `[chat]` — interactive agency chatbot. The agent's tools are the api-mcp
+/// `[chat]` — interactive Harbor chatbot. The agent's tools are the api-mcp
 /// registry endpoints, dispatched with the chat user's principal; calls at or
 /// above `risk_threshold` pause for human approval in the chat UI.
 #[derive(Debug, Clone, Deserialize)]
@@ -161,14 +161,14 @@ pub struct LocalHostingConfig {
     pub dir: String,
 }
 
-/// The `[proxy]` section is shared with the `web-agency-proxy` binary, which
+/// The `[proxy]` section is shared with the `harbor-proxy` binary, which
 /// parses it with its own struct; fields only the proxy reads (bind
-/// addresses, server_url) live in `web-agency/proxy/src/config.rs`.
+/// addresses, server_url) live in `proxy/src/config.rs`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
-    pub agency_domain: String,
-    #[serde(default = "default_agency_upstream")]
-    pub agency_upstream: String,
+    pub domain: String,
+    #[serde(default = "default_upstream")]
+    pub upstream: String,
     pub acme_email: Option<String>,
     /// ACME directory URL override. Defaults to Let's Encrypt production;
     /// tests point this at a pebble instance.
@@ -177,11 +177,11 @@ pub struct ProxyConfig {
     pub internal_token_path: String,
 }
 
-fn default_agency_upstream() -> String {
+fn default_upstream() -> String {
     "127.0.0.1:7380".to_string()
 }
 fn default_internal_token_path() -> String {
-    "/var/lib/web-agency/internal.token".to_string()
+    "/var/lib/harbor-server/internal.token".to_string()
 }
 
 #[derive(Debug, Deserialize)]

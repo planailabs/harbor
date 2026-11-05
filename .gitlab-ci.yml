@@ -33,7 +33,7 @@ flake-check:
     # running job that stops sending trace updates for ~30 minutes
     # (`failure_reason: no_updates_running`, tooltip "running job stopped
     # receiving updates"). A single silent step here takes 15-40 minutes --
-    # the final rustc link of `web-agency-server` prints nothing between its
+    # the final rustc link of `harbor-server` prints nothing between its
     # last warning and `Compiled [N/1016]` -- so a slow but healthy run is
     # killed mid-build with no failing command (pipeline 3049 / job 7510: last
     # output 02:37:57Z, killed 03:15:12Z). Keep the trace alive with a

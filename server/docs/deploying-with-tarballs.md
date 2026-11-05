@@ -5,7 +5,7 @@ ordering_override: -50
 
 # Deploying with Tarballs
 
-Deploy your site to Cloudflare Pages by uploading a tarball through the web-agency API. This is the recommended method for CI/CD pipelines.
+Deploy your site to Cloudflare Pages by uploading a tarball through the Harbor API. This is the recommended method for CI/CD pipelines.
 
 ## Prerequisites
 

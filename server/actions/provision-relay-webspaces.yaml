@@ -1,4 +1,4 @@
-# Provision Agency relay webspaces (chat.<domain> + dev.<domain>) from a
+# Provision Harbor relay webspaces (chat.<domain> + dev.<domain>) from a
 # mac-mgmt fleet server. Idempotent: every resource is find-or-create, so
 # re-running after a partial failure only fills the gaps.
 #
@@ -31,7 +31,7 @@ inputs:
   token_label:
     type: string
     label: Setting-token label
-    default: web-agency-relay
+    default: harbor-relay
 
 actions:
   # ── Resolve domain + fleet ─────────────────────────────────────────
@@ -48,7 +48,7 @@ actions:
     action: _assert
     inputs:
       that: "$domain_found"
-      message: "domain {{ domain }} is not imported into the Agency"
+      message: "domain {{ domain }} is not imported into Harbor"
 
   - name: list mac-mgmt clusters
     action: mac_mgmt_clusters

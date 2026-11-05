@@ -7,10 +7,10 @@ use std::sync::Arc;
 /// A route target — either direct (local) or relay (via mac-mgmt relay).
 #[derive(Debug, Clone)]
 pub enum Route {
-    /// Direct TCP upstream (local webspace, agency server).
+    /// Direct TCP upstream (local webspace, Harbor server).
     Direct(String),
-    /// Static folder served by the agency origin: proxy to `upstream` (the
-    /// agency server), passing the Host through and injecting the internal token
+    /// Static folder served by the Harbor origin: proxy to `upstream` (the
+    /// Harbor server), passing the Host through and injecting the internal token
     /// + webspace id so the server serves the folder's files.
     StaticOrigin {
         upstream: String,
@@ -50,7 +50,7 @@ pub enum AuthMode {
         org_id: uuid::Uuid,
     },
     /// Cookie-based basic-auth gate. The proxy holds only the credential list
-    /// id; credentials are validated on the agency login form, and sessions are
+    /// id; credentials are validated on the Harbor login form, and sessions are
     /// verified per-request via the internal API.
     Basic {
         list_id: uuid::Uuid,
@@ -58,7 +58,7 @@ pub enum AuthMode {
 }
 
 /// Which of the edge's security headers a folder gets (set per folder in the
-/// agency UI). The default is all of them, framing denied.
+/// Harbor UI). The default is all of them, framing denied.
 #[derive(Debug, Clone)]
 pub struct HeaderPolicy {
     /// Off: none of HSTS, nosniff, Referrer-Policy or the framing block.
@@ -86,7 +86,7 @@ pub struct RequestCtx {
     /// Folder mount prefix (e.g. "/api") to strip from the request path before
     /// forwarding upstream. "/" or empty means pass-through.
     mount_prefix: String,
-    /// When set, this request is for a static folder served by the agency
+    /// When set, this request is for a static folder served by the Harbor
     /// origin: passthrough Host and inject the internal token + this webspace id.
     origin_static: Option<String>,
 }
@@ -113,11 +113,11 @@ enum HostState {
 /// The Pingora HTTP proxy that routes requests by Host header, then by the
 /// longest matching folder path prefix. Each host maps to a list of folders
 /// sorted by descending prefix length (longest match wins).
-pub struct WebAgencyProxy {
+pub struct HarborProxy {
     pub routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
-    pub agency_domain: String,
+    pub domain: String,
     pub internal_token: String,
-    /// Base URL of the agency server's internal API (basic-auth verify/session).
+    /// Base URL of the Harbor server's internal API (basic-auth verify/session).
     pub server_url: String,
     /// HTTP client for internal API calls made during request handling.
     pub client: reqwest::Client,
@@ -210,8 +210,8 @@ fn strip_mount_prefix(path: &str, prefix: &str) -> String {
     }
 }
 
-impl WebAgencyProxy {
-    /// Cookie-based basic-auth gate. Intercepts the `cgi-webagency/basic/*`
+impl HarborProxy {
+    /// Cookie-based basic-auth gate. Intercepts the `cgi-harbor/basic/*`
     /// control paths (login/logout/profile) and otherwise verifies the
     /// `__basic_session` cookie against the internal API, redirecting to the
     /// login dance when it's missing or not authorized for this list.
@@ -227,10 +227,10 @@ impl WebAgencyProxy {
         let sub = strip_mount_prefix(&path_only, mount);
 
         // JSON whoami at the cgi base path itself.
-        if sub == "/cgi-webagency/basic" || sub == "/cgi-webagency/basic/" {
+        if sub == "/cgi-harbor/basic" || sub == "/cgi-harbor/basic/" {
             return self.handle_basic_whoami(session, list_id).await;
         }
-        if let Some(action) = sub.strip_prefix("/cgi-webagency/basic/") {
+        if let Some(action) = sub.strip_prefix("/cgi-harbor/basic/") {
             return self
                 .handle_basic_cgi(session, host, &mp, list_id, action)
                 .await;
@@ -255,7 +255,7 @@ impl WebAgencyProxy {
             safe_path_and_query(&session.req_header().uri)
         );
         let loc = format!(
-            "https://{host}{mp}/cgi-webagency/basic/login?back={}",
+            "https://{host}{mp}/cgi-harbor/basic/login?back={}",
             urlencoding::encode(&full)
         );
         self.send_redirect(session, &loc, None).await?;
@@ -274,7 +274,7 @@ impl WebAgencyProxy {
             .split_once('?')
             .map(|(_, q)| q.to_string())
             .unwrap_or_default();
-        let cgi_base = format!("https://{host}{mp}/cgi-webagency/basic");
+        let cgi_base = format!("https://{host}{mp}/cgi-harbor/basic");
         let back = match query_param(&query, "back") {
             Some(b) => urlencoding::decode(&b).map(|c| c.into_owned()).unwrap_or(b),
             None => format!("https://{host}{mp}/"),
@@ -283,7 +283,7 @@ impl WebAgencyProxy {
         match action {
             "login" => {
                 if let Some(token) = query_param(&query, "token") {
-                    // Callback from the agency form: persist a session, set cookie.
+                    // Callback from the Harbor form: persist a session, set cookie.
                     match self.basic_create_session(&token).await {
                         Some((sess, max_age)) => {
                             let dest = if validate_back(&back, host) {
@@ -310,10 +310,10 @@ impl WebAgencyProxy {
                         }
                     }
                 } else {
-                    // Initiate: hand off to the agency login form.
+                    // Initiate: hand off to the Harbor login form.
                     let loc = format!(
-                        "https://{}/agency/basic/{}/login?back={}&cb={}",
-                        self.agency_domain,
+                        "https://{}/harbor/basic/{}/login?back={}&cb={}",
+                        self.domain,
                         list_id,
                         urlencoding::encode(&back),
                         urlencoding::encode(&cgi_base),
@@ -332,8 +332,8 @@ impl WebAgencyProxy {
                     self.basic_logout(&tok, list_id).await;
                 }
                 let loc = format!(
-                    "https://{}/agency/basic/{}/logout?back={}&cb={}",
-                    self.agency_domain,
+                    "https://{}/harbor/basic/{}/logout?back={}&cb={}",
+                    self.domain,
                     list_id,
                     urlencoding::encode(&back),
                     urlencoding::encode(&cgi_base),
@@ -342,8 +342,8 @@ impl WebAgencyProxy {
             }
             "profile" => {
                 let loc = format!(
-                    "https://{}/agency/basic/{}/profile?back={}&cb={}",
-                    self.agency_domain,
+                    "https://{}/harbor/basic/{}/profile?back={}&cb={}",
+                    self.domain,
                     list_id,
                     urlencoding::encode(&back),
                     urlencoding::encode(&cgi_base),
@@ -562,12 +562,12 @@ impl WebAgencyProxy {
             }
         }
 
-        // 3. Redirect to agency OIDC login
+        // 3. Redirect to Harbor OIDC login
         let return_url = format!("https://{host}{path_query}");
         let encoded = urlencoding::encode(&return_url);
         let redirect_url = format!(
             "https://{}/proxy-gate?return_url={encoded}",
-            self.agency_domain
+            self.domain
         );
         self.send_redirect(session, &redirect_url, None).await?;
         Ok(true)
@@ -624,7 +624,7 @@ impl WebAgencyProxy {
 }
 
 #[async_trait]
-impl ProxyHttp for WebAgencyProxy {
+impl ProxyHttp for HarborProxy {
     type CTX = RequestCtx;
 
     fn new_ctx(&self) -> Self::CTX {
@@ -632,10 +632,10 @@ impl ProxyHttp for WebAgencyProxy {
     }
 
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
-        // Intercept .well-known/web-agency.json on any routed host (before auth)
+        // Intercept .well-known/harbor.json on any routed host (before auth)
         let path = session.req_header().uri.path();
-        if path == "/.well-known/web-agency.json" {
-            let body = b"{\"service\":\"web-agency-proxy\"}";
+        if path == "/.well-known/harbor.json" {
+            let body = b"{\"service\":\"harbor-proxy\"}";
             let mut resp = pingora::http::ResponseHeader::build(200, None).map_err(|e| {
                 pingora::Error::because(pingora::ErrorType::InternalError, "build 200 response", e)
             })?;
@@ -817,7 +817,7 @@ impl ProxyHttp for WebAgencyProxy {
         ctx: &mut Self::CTX,
     ) -> Result<()> {
         // Stamp the real client IP. We're the edge, so overwrite (don't append)
-        // any client-supplied X-Forwarded-For to stop spoofing — the agency
+        // any client-supplied X-Forwarded-For to stop spoofing — the Harbor
         // server trusts this header to key brute-force protection per subnet.
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             let _ = upstream_request.insert_header("x-forwarded-for", addr.ip().to_string());
@@ -836,13 +836,13 @@ impl ProxyHttp for WebAgencyProxy {
             }
         }
 
-        // Static folder served by the agency origin: keep the Host header
+        // Static folder served by the Harbor origin: keep the Host header
         // (passthrough) and tell the server which webspace to serve, trusted via
         // the internal token.
         if let Some(webspace_id) = &ctx.origin_static {
-            let _ = upstream_request.insert_header("x-web-agency-webspace", webspace_id);
+            let _ = upstream_request.insert_header("x-harbor-webspace", webspace_id);
             let _ =
-                upstream_request.insert_header("x-web-agency-internal-token", &self.internal_token);
+                upstream_request.insert_header("x-harbor-internal-token", &self.internal_token);
         }
 
         if let Some(relay) = &ctx.relay {
@@ -1010,7 +1010,7 @@ fn is_tls(session: &Session) -> bool {
 /// browsers disagree on which one wins.
 ///
 /// A folder can turn the set off, or name who may frame it (`policy`, set in
-/// the agency UI). An app that names its own `frame-ancestors` has decided
+/// the Harbor UI). An app that names its own `frame-ancestors` has decided
 /// that itself and gets no framing default either: an appended `'none'` would
 /// intersect its list away, and browsers ignore XFO next to `frame-ancestors`
 /// anyway. The CMS relies on this — its branch previews are iframes in the
@@ -1198,15 +1198,15 @@ pub fn build_service(
     cfg: &crate::config::ProxyConfig,
     routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
     cert_store: Arc<crate::cert_store::CertStore>,
-) -> pingora::services::listening::Service<pingora::proxy::HttpProxy<WebAgencyProxy>> {
+) -> pingora::services::listening::Service<pingora::proxy::HttpProxy<HarborProxy>> {
     let internal_token = cfg.internal_token().trim().to_string();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .expect("failed to build internal API client");
-    let proxy = WebAgencyProxy {
+    let proxy = HarborProxy {
         routes,
-        agency_domain: cfg.agency_domain.clone(),
+        domain: cfg.domain.clone(),
         internal_token,
         server_url: cfg.server_url.trim_end_matches('/').to_string(),
         client,

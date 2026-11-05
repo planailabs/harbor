@@ -1,12 +1,12 @@
-# NixOS integration test for the full web-agency workload on one machine:
+# NixOS integration test for the full Harbor workload on one machine:
 #   1. PostgreSQL (auto-provisioned by the server module)
-#   2. web-agency-server (full dx build: web UI + REST/MCP API)
-#   3. web-agency-proxy (Pingora) fed by the server's internal API
+#   2. harbor-server (full dx build: web UI + REST/MCP API)
+#   3. harbor-proxy (Pingora) fed by the server's internal API
 #   4. mock-spaceship / mock-cloudflare / mock-changedetection provider APIs
 #   5. pebble as a local ACME directory for real certificate issuance
 #
 # Credentials point at the mocks via their per-credential `api_url` override;
-# WEB_AGENCY_ALLOW_PRIVATE_APIS=1 lets those loopback URLs through the SSRF
+# HARBOR_ALLOW_PRIVATE_APIS=1 lets those loopback URLs through the SSRF
 # guard (test-only escape hatch).
 #
 # ACME: the server's instant-acme client verifies TLS with rustls native roots.
@@ -44,7 +44,7 @@ let
       -out $out/ca-cert.pem \
       -days 3650 \
       -nodes \
-      -subj "/CN=web-agency full test CA" \
+      -subj "/CN=Harbor full test CA" \
       -addext "basicConstraints=critical,CA:TRUE" \
       -addext "keyUsage=critical,keyCertSign,cRLSign"
     ${pkgs.openssl}/bin/openssl req -newkey rsa:2048 \
@@ -82,7 +82,7 @@ let
     wantedBy = [ "multi-user.target" ];
     environment.LISTEN = "127.0.0.1:${toString port}";
     serviceConfig = {
-      ExecStart = "${pkgs.web-agency-mocks}/bin/${bin}";
+      ExecStart = "${pkgs.harbor-mocks}/bin/${bin}";
       DynamicUser = true;
       Restart = "on-failure";
     };
@@ -90,7 +90,7 @@ let
 in
 
 pkgs.testers.nixosTest {
-  name = "web-agency-full";
+  name = "harbor-full";
 
   nodes.machine = { lib, ... }: {
     imports = [
@@ -109,16 +109,16 @@ pkgs.testers.nixosTest {
 
     environment.systemPackages = [ pkgs.curl ];
 
-    services.web-agency-server = {
+    services.harbor-server = {
       enable = true;
-      package = pkgs.web-agency-server;
+      package = pkgs.harbor-server;
       settings = {
         web.port = webPort;
-        local_hosting.dir = "/var/lib/web-agency-server/web";
+        local_hosting.dir = "/var/lib/harbor-server/web";
         secrets.encryption_key = encryptionKey;
         proxy = {
-          agency_domain = "agency.test";
-          acme_email = "admin@agency.test";
+          domain = "harbor.test";
+          acme_email = "admin@harbor.test";
           acme_directory_url = "https://localhost:14000/dir";
           http_addr = "127.0.0.1:${toString proxyHttpPort}";
           https_addr = "127.0.0.1:${toString proxyHttpsPort}";
@@ -128,14 +128,14 @@ pkgs.testers.nixosTest {
 
     # SSRF escape hatch: credentials in this test point api_url at loopback
     # mocks, which validate_outbound_url would otherwise reject.
-    systemd.services.web-agency-server.environment = {
-      WEB_AGENCY_ALLOW_PRIVATE_APIS = "1";
+    systemd.services.harbor-server.environment = {
+      HARBOR_ALLOW_PRIVATE_APIS = "1";
       SSL_CERT_FILE = "${pebbleTlsDir}/ca-cert.pem";
     };
 
-    services.web-agency-proxy = {
+    services.harbor-proxy = {
       enable = true;
-      package = pkgs.web-agency-proxy;
+      package = pkgs.harbor-proxy;
     };
 
     systemd.services.mock-spaceship = mockService "mock-spaceship" spaceshipPort;
@@ -170,8 +170,8 @@ pkgs.testers.nixosTest {
 
     def dump_journals():
         for unit in [
-            "web-agency-server",
-            "web-agency-proxy",
+            "harbor-server",
+            "harbor-proxy",
             "pebble",
             "mock-spaceship",
             "mock-cloudflare",
@@ -209,16 +209,16 @@ pkgs.testers.nixosTest {
         machine.wait_for_open_port(port)
     machine.log("mocks and pebble are up")
 
-    machine.wait_for_unit("web-agency-server.service")
+    machine.wait_for_unit("harbor-server.service")
     machine.wait_for_open_port(${toString webPort})
     # The API index route needs no auth — use it as the readiness probe.
     machine.wait_until_succeeds(f"curl -sf {API}/api/v1 >/dev/null", timeout=300)
-    machine.log("web-agency-server API is up")
+    machine.log("harbor-server API is up")
 
     # Seed an admin token (tokens.token_hash = hex(sha256(raw token))).
     token_hash = hashlib.sha256(TOKEN.encode()).hexdigest()
     machine.succeed(
-        "sudo -u postgres psql -d web-agency -c "
+        "sudo -u postgres psql -d harbor -c "
         f"\"INSERT INTO tokens (token_hash, kind, label) VALUES ('{token_hash}', 'admin', 'test-admin')\""
     )
     machine.log("admin token seeded")
@@ -344,14 +344,14 @@ pkgs.testers.nixosTest {
         # The ACME path contacts the local proxy for HTTP/DNS challenge plumbing;
         # prove the proxy is ready before certificate issuance so startup
         # failures are reported at the right boundary.
-        machine.wait_for_unit("web-agency-proxy.service")
+        machine.wait_for_unit("harbor-proxy.service")
         machine.wait_for_open_port(${toString proxyHttpPort})
 
         # Served by the proxy itself on any host — proves Pingora is up.
         well_known = json.loads(machine.succeed(
-            "curl -sf http://127.0.0.1:${toString proxyHttpPort}/.well-known/web-agency.json"
+            "curl -sf http://127.0.0.1:${toString proxyHttpPort}/.well-known/harbor.json"
         ))
-        assert well_known["service"] == "web-agency-proxy", f"unexpected: {well_known}"
+        assert well_known["service"] == "harbor-proxy", f"unexpected: {well_known}"
         machine.log("proxy is up")
 
         # ── ACME: issue a real certificate via pebble ─────────────────
@@ -369,16 +369,16 @@ pkgs.testers.nixosTest {
 
         # ── Proxy routing ─────────────────────────────────────────────
 
-        # The agency route is synced from the server's internal API; once it
-        # lands, requests for the agency domain reach the server upstream.
+        # The Harbor route is synced from the server's internal API; once it
+        # lands, requests for the Harbor domain reach the server upstream.
         machine.wait_until_succeeds(
-            "curl -sf -H 'Host: agency.test' "
+            "curl -sf -H 'Host: harbor.test' "
             "http://127.0.0.1:${toString proxyHttpPort}/api/v1 >/dev/null",
             timeout=120,
         )
-        machine.log("proxy answers and routes the agency domain to the server")
+        machine.log("proxy answers and routes the Harbor domain to the server")
 
-        machine.log("full web-agency workload test passed!")
+        machine.log("full Harbor workload test passed!")
     except Exception:
         dump_journals()
         raise

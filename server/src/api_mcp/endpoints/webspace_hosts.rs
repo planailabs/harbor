@@ -348,7 +348,7 @@ async fn cloudflare_folder(pool: &sqlx::PgPool, host_id: Uuid) -> Result<(String
 }
 
 /// Create a CNAME record on the bound domain's Cloudflare zone (used for both
-/// proxy hosts → agency_domain and cloudflare hosts → {project}.pages.dev).
+/// proxy hosts → harbor_domain and cloudflare hosts → {project}.pages.dev).
 #[cfg(feature = "server")]
 async fn create_host_cname(
     pool: &sqlx::PgPool,
@@ -359,7 +359,7 @@ async fn create_host_cname(
     comment: &str,
     // Whether Cloudflare should sit in front of the name: true for Pages,
     // where Cloudflare *is* the origin; false for a proxy host, because the
-    // agency edge answers on that name and gets its own certificate for it
+    // Harbor edge answers on that name and gets its own certificate for it
     // over ACME, which it cannot do while Cloudflare terminates TLS in front.
     proxied: bool,
 ) -> Result<(), ApiError> {
@@ -483,11 +483,11 @@ async fn remove_host_cname(
 }
 
 #[cfg(feature = "server")]
-fn agency_domain() -> Option<String> {
+fn harbor_domain() -> Option<String> {
     crate::config::config()
         .proxy
         .as_ref()
-        .map(|p| p.agency_domain.clone())
+        .map(|p| p.domain.clone())
 }
 
 // ── Item endpoints ────────────────────────────────────────────────────
@@ -562,7 +562,7 @@ pub async fn host_get(
             _ => domain_name.clone(),
         };
         let sub_name = subdomain_name.as_deref().unwrap_or("@");
-        // proxy hosts: CNAME → agency_domain; cloudflare hosts: CNAME → *.pages.dev.
+        // proxy hosts: CNAME → harbor_domain; cloudflare hosts: CNAME → *.pages.dev.
         let cname_ok = if is_cloudflare {
             sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS(SELECT 1 FROM dns_records WHERE domain_id = $1 AND name = $2 \
@@ -573,7 +573,7 @@ pub async fn host_get(
             .fetch_one(pool)
             .await
             .unwrap_or(false)
-        } else if let Some(ad) = agency_domain() {
+        } else if let Some(ad) = harbor_domain() {
             sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS(SELECT 1 FROM dns_records WHERE domain_id = $1 AND name = $2 \
                  AND record_type = 'CNAME' AND record_value = $3)",
@@ -786,7 +786,7 @@ pub async fn host_delete(
             }
             let cname_target = format!("{project_name}.pages.dev");
             remove_host_cname(pool, domain_id, &hostname, &cname_target).await;
-        } else if let Some(ad) = agency_domain() {
+        } else if let Some(ad) = harbor_domain() {
             remove_host_cname(pool, domain_id, &hostname, &ad).await;
         }
     }
@@ -853,7 +853,7 @@ pub async fn host_bind_domain(
             true,
         )
         .await?;
-    } else if let Some(ad) = agency_domain() {
+    } else if let Some(ad) = harbor_domain() {
         create_host_cname(
             pool,
             input.domain_id,
@@ -910,7 +910,7 @@ pub async fn host_unbind_domain(
                 let cname_target = format!("{project_name}.pages.dev");
                 remove_host_cname(pool, domain_id, &input.hostname, &cname_target).await;
             }
-        } else if let Some(ad) = agency_domain() {
+        } else if let Some(ad) = harbor_domain() {
             remove_host_cname(pool, domain_id, &input.hostname, &ad).await;
         }
     }
@@ -957,7 +957,7 @@ pub async fn host_fix_cname(
         )
         .await
     } else {
-        let ad = agency_domain().ok_or_else(|| ApiError::internal("no proxy config"))?;
+        let ad = harbor_domain().ok_or_else(|| ApiError::internal("no proxy config"))?;
         create_host_cname(
             pool,
             input.domain_id,

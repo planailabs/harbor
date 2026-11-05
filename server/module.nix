@@ -6,7 +6,7 @@
 }:
 
 let
-  cfg = config.services.web-agency-server;
+  cfg = config.services.harbor-server;
   settingsFormat = pkgs.formats.toml { };
   configFile = settingsFormat.generate "config.toml" cfg.settings;
   envFiles = lib.filter (f: f != null) [ cfg.environmentFile cfg.otlpHeadersFile ];
@@ -15,26 +15,26 @@ in
   imports = [
     ../proxy/module.nix
   ];
-  options.services.web-agency-server = {
-    enable = lib.mkEnableOption "web-agency server";
+  options.services.harbor-server = {
+    enable = lib.mkEnableOption "Harbor server";
 
-    package = lib.mkPackageOption pkgs "web-agency-server" { };
+    package = lib.mkPackageOption pkgs "harbor-server" { };
 
     settings = lib.mkOption {
       type = settingsFormat.type;
       default = { };
       description = ''
-        Configuration for web-agency-server in Nix attribute set form.
+        Configuration for harbor-server in Nix attribute set form.
         Rendered to config.toml.
       '';
       example = lib.literalExpression ''
         {
-          database.url = "postgres://localhost/web_agency";
+          database.url = "postgres://localhost/harbor";
           web.port = 7380;
           auth = {
             client_id = "xxx.apps.googleusercontent.com";
             client_secret = "GOCSPX-xxx";
-            redirect_uri = "https://agency.example.com/auth/callback";
+            redirect_uri = "https://harbor.example.com/auth/callback";
             allowed_domains = [ "example.com" ];
             cookie_secret = "generate-with-openssl-rand-hex-32";
           };
@@ -69,7 +69,7 @@ in
       type = lib.types.attrsOf lib.types.str;
       default = { };
       example = {
-        "X-Scope-OrgID" = "web-agency";
+        "X-Scope-OrgID" = "harbor";
       };
       description = ''
         Headers sent with every OTLP export, as OTEL_EXPORTER_OTLP_HEADERS.
@@ -101,8 +101,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.services.web-agency-server = {
-      description = "web-agency server";
+    systemd.services.harbor-server = {
+      description = "Harbor server";
       after = [ "network.target" "postgresql.service" ];
       wants = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -124,13 +124,13 @@ in
 
         DynamicUser = true;
         # Pin the primary group to the static shared group so:
-        #  - the unit name never collides with the "web-agency" group
+        #  - the unit name never collides with the "harbor" group
         #    that DynamicUser would otherwise auto-allocate, and
-        #  - StateDirectory (/var/lib/web-agency-server, mode 0750) is
+        #  - StateDirectory (/var/lib/harbor-server, mode 0750) is
         #    group-readable by the proxy, which joins the same group via
         #    SupplementaryGroups.
-        Group = "web-agency";
-        StateDirectory = "web-agency-server";
+        Group = "harbor";
+        StateDirectory = "harbor-server";
         StateDirectoryMode = "0750";
 
         # Hardening
@@ -161,25 +161,25 @@ in
     };
 
     # Shared group so the proxy can read the server's internal token file.
-    users.groups.web-agency = { };
+    users.groups.harbor = { };
 
-    services.web-agency-server.settings = {
+    services.harbor-server.settings = {
       # Peer auth: the server connects as its OS user (the dynamic user
-      # for the systemd.services.web-agency-server unit, named
-      # "web-agency-server"), so the postgres role must match.
-      database.url = "postgres:///web-agency?host=/run/postgresql";
-      proxy.internal_token_path = lib.mkDefault "/var/lib/web-agency-server/internal.token";
+      # for the systemd.services.harbor-server unit, named
+      # "harbor-server"), so the postgres role must match.
+      database.url = "postgres:///harbor?host=/run/postgresql";
+      proxy.internal_token_path = lib.mkDefault "/var/lib/harbor-server/internal.token";
     };
 
     # Pre-configure proxy from the server's settings so values aren't duplicated.
-    services.web-agency-proxy.settings.proxy = lib.mkIf (cfg.settings ? proxy) (
+    services.harbor-proxy.settings.proxy = lib.mkIf (cfg.settings ? proxy) (
       let
         p = cfg.settings.proxy;
         port = cfg.settings.web.port or 7380;
       in
       {
-        agency_domain = lib.mkIf (p ? agency_domain) (lib.mkDefault p.agency_domain);
-        agency_upstream = lib.mkDefault "127.0.0.1:${toString port}";
+        domain = lib.mkIf (p ? domain) (lib.mkDefault p.domain);
+        upstream = lib.mkDefault "127.0.0.1:${toString port}";
         server_url = lib.mkDefault "http://127.0.0.1:${toString port}";
         acme_email = lib.mkIf (p ? acme_email) (lib.mkDefault p.acme_email);
         http_addr = lib.mkIf (p ? http_addr) (lib.mkDefault p.http_addr);
@@ -190,24 +190,24 @@ in
     # Where the server writes the shared token; the proxy picks it up via
     # LoadCredential (its own settings.proxy.internal_token_path points at
     # the credentials directory, not this file).
-    services.web-agency-proxy.internalTokenFile = lib.mkIf (cfg.settings ? proxy) (
-      lib.mkDefault (cfg.settings.proxy.internal_token_path or "/var/lib/web-agency-server/internal.token")
+    services.harbor-proxy.internalTokenFile = lib.mkIf (cfg.settings ? proxy) (
+      lib.mkDefault (cfg.settings.proxy.internal_token_path or "/var/lib/harbor-server/internal.token")
     );
 
-    systemd.services.web-agency-proxy = lib.mkIf (cfg.settings ? proxy) {
-      after = [ "web-agency-server.service" ];
-      requires = [ "web-agency-server.service" ];
+    systemd.services.harbor-proxy = lib.mkIf (cfg.settings ? proxy) {
+      after = [ "harbor-server.service" ];
+      requires = [ "harbor-server.service" ];
     };
 
     services.postgresql = {
       enable = true;
 
       ensureUsers = [{
-        name = "web-agency-server";
+        name = "harbor-server";
         ensureClauses.superuser = true;
       }];
 
-      ensureDatabases = [ "web-agency" ];
+      ensureDatabases = [ "harbor" ];
     };
 
     networking.firewall = lib.mkIf cfg.openFirewall {

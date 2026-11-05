@@ -5,8 +5,8 @@
 //!
 //!   * **Internal API** (`/api/internal/basic/{verify,session,logout}`) —
 //!     Bearer-token authed, called by the proxy on every gated request.
-//!   * **Agency HTML pages** (`/agency/basic/...`) — public login/logout/profile
-//!     pages on the agency domain; see `agency_router`.
+//!   * **Harbor HTML pages** (`/harbor/basic/...`) — public login/logout/profile
+//!     pages on the Harbor domain; see `harbor_router`.
 //!
 //! Identity model (see migration 027): a browser `sso` proves credentials for a
 //! set of lists (`basic_auth_sso_lists`). Cookies on each domain
@@ -104,7 +104,7 @@ use plan_ai_html::escape as esc;
 // doubles the wait (30s, 60s, 120s, …). A success clears the counter.
 //
 // State is in-process only. ponytail: a single proxy/server instance shares one
-// map; move to Redis if the agency server is ever horizontally scaled.
+// map; move to Redis if the Harbor server is ever horizontally scaled.
 
 const FREE_ATTEMPTS: u32 = 2;
 const BASE_LOCK_SECS: u64 = 30;
@@ -218,7 +218,7 @@ fn internal_token() -> Result<String, (StatusCode, String)> {
     Ok(tok.trim().to_string())
 }
 
-// ── signed handoff token (agency → proxy → internal /session) ────────────
+// ── signed handoff token (Harbor → proxy → internal /session) ────────────
 
 #[derive(Serialize, Deserialize)]
 struct Handoff {
@@ -424,18 +424,18 @@ async fn logout_ep(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── agency HTML pages (public; NOT behind OIDC require_auth) ─────────────
+// ── Harbor HTML pages (public; NOT behind OIDC require_auth) ─────────────
 
-pub fn agency_router(pool: PgPool) -> Router<()> {
+pub fn harbor_router(pool: PgPool) -> Router<()> {
     Router::new()
         .route(
-            "/agency/basic/{list_id}/login",
+            "/harbor/basic/{list_id}/login",
             get(login_page).post(login_submit),
         )
-        .route("/agency/basic/{list_id}/logout", get(logout_page))
-        .route("/agency/basic/{list_id}/profile", get(profile_page))
-        .route("/agency/basic/profile", get(global_profile))
-        .route("/agency/basic/profile/logout", post(global_logout))
+        .route("/harbor/basic/{list_id}/logout", get(logout_page))
+        .route("/harbor/basic/{list_id}/profile", get(profile_page))
+        .route("/harbor/basic/profile", get(global_profile))
+        .route("/harbor/basic/profile/logout", post(global_logout))
         .with_state(pool)
 }
 
@@ -497,11 +497,11 @@ async fn cb_host_ok(pool: &PgPool, list_id: Uuid, cb: &str) -> bool {
 
 // -- sso/identity DB helpers --
 
-const AGENCY_COOKIE: &str = "__agency_basic_sso";
+const HARBOR_COOKIE: &str = "__harbor_basic_sso";
 const SSO_TRY_COOKIE: &str = "__basic_sso_try";
 
 async fn sso_from_cookie(pool: &PgPool, jar: &CookieJar) -> Option<Uuid> {
-    let tok = jar.get(AGENCY_COOKIE)?.value().to_string();
+    let tok = jar.get(HARBOR_COOKIE)?.value().to_string();
     sqlx::query_scalar::<_, Uuid>(
         "SELECT s.sso_id FROM basic_auth_sessions s \
          JOIN basic_auth_sso o ON o.id = s.sso_id \
@@ -556,7 +556,7 @@ async fn creds_ok(pool: &PgPool, list_id: Uuid, username: &str, password: &str) 
 }
 
 /// Resolve (or create) the browser identity. Returns the identity id and, when
-/// a new one was created, the agency SSO cookie to add to the response jar.
+/// a new one was created, the Harbor SSO cookie to add to the response jar.
 async fn ensure_sso(
     pool: &PgPool,
     jar: &CookieJar,
@@ -565,7 +565,7 @@ async fn ensure_sso(
     let ttl = if keep { KEEP_SECS } else { SESSION_SECS };
     let new_exp = chrono::Utc::now() + chrono::Duration::seconds(ttl);
     if let Some(sso_id) = sso_from_cookie(pool, jar).await {
-        // Extend the identity's life; reuse the existing agency cookie.
+        // Extend the identity's life; reuse the existing Harbor cookie.
         let _ = sqlx::query(
             "UPDATE basic_auth_sso SET expires_at = GREATEST(expires_at, $2) WHERE id = $1",
         )
@@ -583,7 +583,7 @@ async fn ensure_sso(
     .await
     .map_err(|e| e.to_string())?;
     let (cookie_token, _) = create_session(pool, sso_id, keep).await?;
-    Ok((sso_id, Some(agency_cookie(&cookie_token, keep))))
+    Ok((sso_id, Some(harbor_cookie(&cookie_token, keep))))
 }
 
 fn base_cookie(name: &'static str, value: String) -> Cookie<'static> {
@@ -595,8 +595,8 @@ fn base_cookie(name: &'static str, value: String) -> Cookie<'static> {
         .build()
 }
 
-fn agency_cookie(token: &str, keep: bool) -> Cookie<'static> {
-    let mut c = base_cookie(AGENCY_COOKIE, token.to_string());
+fn harbor_cookie(token: &str, keep: bool) -> Cookie<'static> {
+    let mut c = base_cookie(HARBOR_COOKIE, token.to_string());
     if keep {
         c.set_max_age(Some(time::Duration::seconds(KEEP_SECS)));
     }
@@ -654,7 +654,7 @@ fn page(lang: Lang, title: &str, body: &str) -> Html<String> {
 }
 
 const LOGIN_TPL: &str = r#"<h1 class="h-page">{{l_title}}</h1>
-<form method="post" action="/agency/basic/{{list_id}}/login">
+<form method="post" action="/harbor/basic/{{list_id}}/login">
 <input type="hidden" name="cb" value="{{cb}}">
 <input type="hidden" name="back" value="{{back}}">
 <label class="label" for="u">{{l_user}}</label>
@@ -694,7 +694,7 @@ fn login_form_html(
 // The `<meta http-equiv="refresh">` reloads the GET login page (carrying cb/back)
 // once the countdown elapses — browsers honour it inside <body>. cb/back are
 // percent-encoded before templating, so the auto-escape leaves them intact.
-const LOCKED_TPL: &str = r#"<meta http-equiv="refresh" content="{{secs}};url=/agency/basic/{{list_id}}/login?cb={{cb}}&back={{back}}">
+const LOCKED_TPL: &str = r#"<meta http-equiv="refresh" content="{{secs}};url=/harbor/basic/{{list_id}}/login?cb={{cb}}&back={{back}}">
 <h1 class="h-page">{{l_title}}</h1>
 <div class="err">{{l_msg}}</div>
 <p class="help" style="margin-top:.6rem">{{l_retry}}</p>"#;
@@ -849,7 +849,7 @@ async fn logout_page(
         "<h1 class=\"h-page\">{title}</h1>\
          <p class=\"help\">{body_text}</p>\
          <p style=\"margin-top:1rem\"><a class=\"btn btn-primary btn-lg\" href=\"{login}\">{again}</a></p>\
-         <p class=\"help\" style=\"margin-top:1rem\"><a class=\"link\" href=\"/agency/basic/profile\">{manage}</a>{back_link}</p>",
+         <p class=\"help\" style=\"margin-top:1rem\"><a class=\"link\" href=\"/harbor/basic/profile\">{manage}</a>{back_link}</p>",
         title = tr(lang, "signed-out-title"),
         body_text = tr(lang, "signed-out-body"),
         login = esc(&login),
@@ -940,7 +940,7 @@ async fn profile_page(
 
     let body = format!(
         "<h1 class=\"h-page\">{title}</h1>{status}{others}\
-         <p class=\"help\" style=\"margin-top:1rem\"><a class=\"link\" href=\"/agency/basic/profile\">{manage}</a>{back_link}</p>",
+         <p class=\"help\" style=\"margin-top:1rem\"><a class=\"link\" href=\"/harbor/basic/profile\">{manage}</a>{back_link}</p>",
         title = tr(lang, "profile-title"),
         manage = tr(lang, "manage-sessions"),
         back_link = if back.is_empty() {
@@ -999,7 +999,7 @@ async fn global_profile(
             "<li style=\"display:flex;justify-content:space-between;align-items:center;\
              gap:1rem;padding:.6rem 0;border-bottom:1px solid rgb(var(--c-line))\">\
              <span>{label}</span>\
-             <form method=post action=\"/agency/basic/profile/logout\" style=\"margin:0\">\
+             <form method=post action=\"/harbor/basic/profile/logout\" style=\"margin:0\">\
              <input type=hidden name=list_id value=\"{id}\">\
              <button class=\"btn btn-secondary btn-sm\" type=submit>{sign_out}</button></form></li>",
             label = tr_args(lang, "item-as", &[("name", &esc(&name)), ("user", &esc(&user))]),
@@ -1010,7 +1010,7 @@ async fn global_profile(
     let body = format!(
         "<h1 class=\"h-page\">{title}</h1>\
          <p class=\"help\">{areas}</p>{items}\
-         <form method=post action=\"/agency/basic/profile/logout\" style=\"margin-top:1.25rem\">\
+         <form method=post action=\"/harbor/basic/profile/logout\" style=\"margin-top:1.25rem\">\
          <input type=hidden name=all value=1>\
          <button class=\"btn btn-danger btn-lg\" type=submit style=\"width:100%\">{all_out}</button></form>",
         title = tr(lang, "sessions-title"),
@@ -1027,17 +1027,17 @@ async fn global_logout(
 ) -> (CookieJar, Response) {
     let form = parse_form(&body);
     let Some(sso_id) = sso_from_cookie(&pool, &jar).await else {
-        return (jar, Redirect::to("/agency/basic/profile").into_response());
+        return (jar, Redirect::to("/harbor/basic/profile").into_response());
     };
 
     if form.get("all").map(|v| v == "1").unwrap_or(false) {
-        // Nuclear: drop the whole identity everywhere + clear the agency cookie.
+        // Nuclear: drop the whole identity everywhere + clear the Harbor cookie.
         let _ = sqlx::query("DELETE FROM basic_auth_sso WHERE id = $1")
             .bind(sso_id)
             .execute(&pool)
             .await;
-        let jar = jar.remove(Cookie::build(AGENCY_COOKIE).path("/"));
-        return (jar, Redirect::to("/agency/basic/profile").into_response());
+        let jar = jar.remove(Cookie::build(HARBOR_COOKIE).path("/"));
+        return (jar, Redirect::to("/harbor/basic/profile").into_response());
     }
 
     if let Some(list_id) = form.get("list_id").and_then(|s| Uuid::parse_str(s).ok()) {
@@ -1047,7 +1047,7 @@ async fn global_logout(
             .execute(&pool)
             .await;
     }
-    (jar, Redirect::to("/agency/basic/profile").into_response())
+    (jar, Redirect::to("/harbor/basic/profile").into_response())
 }
 
 #[cfg(test)]

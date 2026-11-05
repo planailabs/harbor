@@ -1,5 +1,5 @@
 [database]
-url = "postgres://localhost/web_agency"
+url = "postgres://localhost/harbor"
 
 [web]
 port = 7380
@@ -42,15 +42,15 @@ encryption_key = "CHANGE_ME_base64_encoded_32_byte_key"
 # zitadel_org = "397597061693833352"   # only plan.ai org accounts sign in
 
 # [proxy]
-# agency_domain = "agency.example.com"
-# agency_upstream = "127.0.0.1:7380"
+# domain = "harbor.example.com"
+# upstream = "127.0.0.1:7380"
 # http_addr = "[::]:80"
 # https_addr = "[::]:443"
 # acme_email = "admin@example.com"
-# internal_token_path = "/var/lib/web-agency/internal.token"
+# internal_token_path = "/var/lib/harbor-server/internal.token"
 # server_url = "http://127.0.0.1:7380"
 
-# Agency chat: interactive chatbot in the web UI (floating bubble, bottom
+# Harbor chat: interactive chatbot in the web UI (floating bubble, bottom
 # right). The agent's tools are the api-mcp endpoints (domains, webspaces,
 # credentials, action templates, ...), dispatched with the chat user's
 # permissions; tool calls at or above risk_threshold pause for approval in

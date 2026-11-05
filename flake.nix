@@ -19,8 +19,8 @@
     {
       overlays.default = import ./overlay.nix { gitSha = self.rev or self.dirtyRev or "unknown"; };
       nixosModules.default = import ./server/module.nix;
-      nixosModules.web-agency = import ./server/module.nix;
-      nixosModules.web-agency-proxy = import ./proxy/module.nix;
+      nixosModules.harbor = import ./server/module.nix;
+      nixosModules.harbor-proxy = import ./proxy/module.nix;
     } //
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -75,10 +75,10 @@
         };
 
         packages = {
-          default = pkgs.web-agency-server;
-          web-agency = pkgs.web-agency-server;
-          web-agency-proxy = pkgs.web-agency-proxy;
-          web-agency-mocks = pkgs.web-agency-mocks;
+          default = pkgs.harbor-server;
+          harbor-server = pkgs.harbor-server;
+          harbor-proxy = pkgs.harbor-proxy;
+          harbor-mocks = pkgs.harbor-mocks;
           dioxus-cli-patched = pkgs.dioxus-cli-patched;
         } // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           # NixOS-in-Incus image for the plan.ai `nix-image` GitLab runners. The
@@ -93,7 +93,7 @@
               "${nixpkgs}/nixos/modules/virtualisation/lxc-container.nix"
               gitlab-incus-image.nixosModules.gitlab-incus-image
               ({ pkgs, ... }: {
-                # `cargo test` in the `test` job runs web-agency-server's
+                # `cargo test` in the `test` job runs harbor-server's
                 # `credentials::pg_tests`, which boot an ephemeral PostgreSQL
                 # cluster through the `pgtemp` crate. pgtemp refuses to run
                 # Postgres as root: when euid == 0 it `chown -R`s the data dir

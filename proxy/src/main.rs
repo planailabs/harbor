@@ -18,15 +18,15 @@ fn main() {
 
     let cfg = config::load();
     tracing::info!(
-        agency_domain = %cfg.agency_domain,
+        domain = %cfg.domain,
         http = %cfg.http_addr,
         https = %cfg.https_addr,
-        "starting web-agency-proxy"
+        "starting harbor-proxy"
     );
 
     // Generate self-signed fallback cert
     let fallback =
-        self_signed::generate(&[&cfg.agency_domain]).expect("failed to generate self-signed cert");
+        self_signed::generate(&[&cfg.domain]).expect("failed to generate self-signed cert");
     tracing::info!("generated self-signed fallback cert");
 
     // Build shared state

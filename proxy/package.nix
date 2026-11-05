@@ -9,13 +9,13 @@
 }:
 
 rustPlatform.buildRustPackage {
-  pname = "web-agency-proxy";
+  pname = "harbor-proxy";
   version = "0.1.0";
   src = ../.;
   cargoLock.lockFile = ../Cargo.lock;
   cargoLock.outputHashes = import ../extra-hashes.nix;
 
-  cargoBuildFlags = [ "-p" "web-agency-proxy" ];
+  cargoBuildFlags = [ "-p" "harbor-proxy" ];
 
   nativeBuildInputs = [
     cmake   # boring-sys builds BoringSSL from source
@@ -29,8 +29,8 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "Web agency reverse proxy – Pingora-based TLS termination and routing";
+    description = "Harbor reverse proxy – Pingora-based TLS termination and routing";
     license = lib.licenses.asl20;
-    mainProgram = "web-agency-proxy";
+    mainProgram = "harbor-proxy";
   };
 }

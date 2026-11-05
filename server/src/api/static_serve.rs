@@ -1,13 +1,13 @@
 //! Webspace static router.
 //!
-//! The proxy proxies static-folder requests to the agency server (passing the
+//! The proxy proxies static-folder requests to the Harbor server (passing the
 //! original Host through) and injects two headers:
-//!   * `x-web-agency-webspace`        — the webspace (folder) id to serve
-//!   * `x-web-agency-internal-token`  — the shared internal token (trust gate)
+//!   * `x-harbor-webspace`        — the webspace (folder) id to serve
+//!   * `x-harbor-internal-token`  — the shared internal token (trust gate)
 //!
-//! This is a standalone router, kept fully separate from the agency app router
+//! This is a standalone router, kept fully separate from the Harbor app router
 //! (no OIDC/Dioxus middleware). `main` steers requests carrying the webspace
-//! header here; everything else goes to the agency router. Files are served
+//! header here; everything else goes to the Harbor router. Files are served
 //! from the folder's webroot via `tower_http::services::ServeDir` (which handles
 //! MIME types, index.html, range/conditional requests, and traversal safety).
 
@@ -21,8 +21,8 @@ use dioxus::fullstack::axum::{
 use tower::ServiceExt; // oneshot
 use tower_http::services::ServeDir;
 
-pub const WEBSPACE_HEADER: &str = "x-web-agency-webspace";
-const TOKEN_HEADER: &str = "x-web-agency-internal-token";
+pub const WEBSPACE_HEADER: &str = "x-harbor-webspace";
+const TOKEN_HEADER: &str = "x-harbor-internal-token";
 
 /// Router for proxy-forwarded static webspace requests. Every request is served
 /// from the requested webspace's webroot (the proxy guarantees the header).

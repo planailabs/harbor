@@ -766,22 +766,22 @@ fn DirectUploadDisplay(
 
                 div { class: "text-sm text-fg-muted mb-1", "Install:" }
                 div { class: "font-mono text-sm bg-surface-2 px-4 py-2 rounded select-all mb-3",
-                    "cargo install --git https://git.plan.ai/plan-ai/mac-mgmt web-agency-upload"
+                    "cargo install --git https://git.plan.ai/plan-ai/mac-mgmt harbor-upload"
                 }
 
                 div { class: "text-sm text-fg-muted mb-1", "Deploy:" }
                 div { class: "font-mono text-sm bg-surface-2 px-4 py-2 rounded select-all mb-3 whitespace-pre",
-                    "export WEB_AGENCY_TOKEN=your-deploy-token\nexport WEB_AGENCY_URL=https://your-server.example.com\nweb-agency-upload ./dist"
+                    "export HARBOR_TOKEN=your-deploy-token\nexport HARBOR_URL=https://your-server.example.com\nharbor-upload ./dist"
                 }
 
                 div { class: "text-sm text-fg-muted mb-1", "Or with explicit arguments:" }
                 div { class: "font-mono text-sm bg-surface-2 px-4 py-2 rounded select-all mb-3 whitespace-pre",
-                    "web-agency-upload ./dist \\\n  --token YOUR_TOKEN \\\n  --url https://your-server.example.com \\\n  --webspace-id {ws_id}"
+                    "harbor-upload ./dist \\\n  --token YOUR_TOKEN \\\n  --url https://your-server.example.com \\\n  --webspace-id {ws_id}"
                 }
 
                 div { class: "text-sm text-fg-muted mb-1", "Deploy to a preview branch:" }
                 div { class: "font-mono text-sm bg-surface-2 px-4 py-2 rounded select-all",
-                    "web-agency-upload ./dist --branch preview"
+                    "harbor-upload ./dist --branch preview"
                 }
 
                 div { class: "mt-3",
@@ -1432,7 +1432,7 @@ fn AuthSettingsSection(
 
                 if *auth_mode.read() == "oidc" {
                     div { class: "text-sm text-fg-muted",
-                        "Members of this webspace's organization will have access after logging in via the agency."
+                        "Members of this webspace's organization will have access after logging in via Harbor."
                     }
                 }
             }

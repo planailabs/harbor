@@ -1,11 +1,11 @@
 [package]
-name = "web-agency-upload"
+name = "harbor-upload"
 version = "0.1.0"
 edition = "2024"
-description = "CLI tool to upload site folders to web-agency Cloudflare Pages webspaces"
+description = "CLI tool to upload site folders to Harbor Cloudflare Pages webspaces"
 
 [[bin]]
-name = "web-agency-upload"
+name = "harbor-upload"
 path = "src/main.rs"
 
 [dependencies]

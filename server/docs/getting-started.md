@@ -5,11 +5,11 @@ ordering_override: -100
 
 # Getting Started
 
-Welcome to the Web Agency server — a management dashboard for domains, DNS, Cloudflare Pages webspaces, and billing.
+Welcome to the Harbor server — a management dashboard for domains, DNS, Cloudflare Pages webspaces, and billing.
 
 ## Overview
 
-The Web Agency server lets you:
+The Harbor server lets you:
 
 - **Manage domains** across Cloudflare and Spaceship registrars
 - **Import existing domains** from your Cloudflare or Spaceship accounts
@@ -51,13 +51,13 @@ Go to **Webspaces** → **Create Webspace** and choose:
 
 ### 5. Bind Domains to Webspaces
 
-On the webspace detail page, bind domains or subdomains. For Cloudflare Pages, custom domains are automatically configured. For Relay/Tunnel webspaces, a CNAME record is created pointing to the agency domain.
+On the webspace detail page, bind domains or subdomains. For Cloudflare Pages, custom domains are automatically configured. For Relay/Tunnel webspaces, a CNAME record is created pointing to the Harbor domain.
 
 ### 6. (Optional) Protect with Auth
 
 On the webspace detail page, set an [auth mode](/docs/webspace-auth):
 
-- **OIDC**: Require login via the agency's OIDC provider (org members only)
+- **OIDC**: Require login via Harbor's OIDC provider (org members only)
 - **HTTP Basic**: Require credentials from a [Basic Auth List](/docs/basic-auth-lists)
 
 ## Concepts

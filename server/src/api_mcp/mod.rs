@@ -1,4 +1,4 @@
-//! Hybrid HTTP-API + MCP surface for the web-agency, built on `plan-ai-api-mcp`.
+//! Hybrid HTTP-API + MCP surface for Harbor, built on `plan-ai-api-mcp`.
 //!
 //! `endpoints` is compiled for both client and server (it holds the DTOs and the
 //! macro-generated `#[server]` wrappers the UI calls); the registry + auth are
@@ -129,9 +129,9 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
 
     let auth = Arc::new(auth::BearerAuthenticator::new(pool.clone(), crate::config::try_config().and_then(|c| c.zitadel_bearer.as_ref())));
     let mut reg = Registry::new(auth)
-        .info("Web Agency API", env!("CARGO_PKG_VERSION"))
+        .info("Harbor API", env!("CARGO_PKG_VERSION"))
         .instructions(
-            "Web Agency admin API. Authenticate with a Bearer token (kind='admin' for global \
+            "Harbor admin API. Authenticate with a Bearer token (kind='admin' for global \
              access, or kind='api' scoped to an organization) or a signed-in user's Zitadel \
              token (their organizations). Tools are named <entity>_<action>, e.g. domain_list.",
         );
