@@ -118,6 +118,7 @@ pkgs.testers.nixosTest {
         secrets.encryption_key = encryptionKey;
         proxy = {
           domain = "harbor.test";
+          redirect_domains = [ "agency.test" ];
           acme_email = "admin@harbor.test";
           acme_directory_url = "https://localhost:14000/dir";
           http_addr = "127.0.0.1:${toString proxyHttpPort}";
@@ -377,6 +378,14 @@ pkgs.testers.nixosTest {
             timeout=120,
         )
         machine.log("proxy answers and routes the Harbor domain to the server")
+
+        # A redirect domain answers with a 308 to the same path on the domain.
+        location = machine.succeed(
+            "curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Host: agency.test' "
+            "'http://127.0.0.1:${toString proxyHttpPort}/api/v1?x=1'"
+        ).strip()
+        assert location == "308 http://harbor.test/api/v1?x=1", f"unexpected: {location}"
+        machine.log("redirect domain answers with a 308 to the Harbor domain")
 
         machine.log("full Harbor workload test passed!")
     except Exception:

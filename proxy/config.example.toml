@@ -1,5 +1,7 @@
 [proxy]
 domain = "harbor.example.com"
+# Old hostnames: answered with a 308 to the same path on `domain`.
+redirect_domains = ["agency.example.com"]
 upstream = "127.0.0.1:7380"
 http_addr = "[::]:80"
 https_addr = "[::]:443"

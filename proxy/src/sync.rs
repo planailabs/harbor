@@ -274,15 +274,26 @@ async fn reload_certs(client: &reqwest::Client, server_url: &str, cert_store: &C
     }
 }
 
-/// Request cert issuance for routes that don't have certs yet.
+/// Request cert issuance for routes and redirect domains that don't have
+/// certs yet. (`domain` itself is a route, synced from the server.)
 async fn trigger_missing_certs(
     client: &reqwest::Client,
     server_url: &str,
     routes: &ArcSwap<HashMap<String, Vec<crate::proxy::Folder>>>,
+    redirect_domains: &[String],
     cert_store: &CertStore,
 ) {
-    let route_hosts: Vec<String> = routes.load().keys().cloned().collect();
-    for host in route_hosts {
+    let mut hosts: Vec<String> = routes.load().keys().cloned().collect();
+    // Only once routes are loaded, so the server is known to be answering.
+    if !hosts.is_empty() {
+        for d in redirect_domains {
+            let d = d.to_lowercase();
+            if !hosts.contains(&d) {
+                hosts.push(d);
+            }
+        }
+    }
+    for host in hosts {
         if !cert_store.has_cert(&host) {
             tracing::info!(domain = %host, "requesting cert issuance");
             if let Err(e) = client
@@ -302,13 +313,14 @@ async fn reload_all(
     client: &reqwest::Client,
     server_url: &str,
     routes: &ArcSwap<HashMap<String, Vec<crate::proxy::Folder>>>,
+    redirect_domains: &[String],
     cert_store: &CertStore,
 ) -> Option<i64> {
     let token_lifetime = reload_routes(client, server_url, routes)
         .await
         .and_then(|tl| tl);
     let _ = reload_certs(client, server_url, cert_store).await;
-    trigger_missing_certs(client, server_url, routes, cert_store).await;
+    trigger_missing_certs(client, server_url, routes, redirect_domains, cert_store).await;
     token_lifetime
 }
 
@@ -386,7 +398,7 @@ async fn sync_loop(
     reload_timer.tick().await; // consume the first immediate tick
 
     // Prime the reload timer from the initial route data.
-    let tl = reload_all(&client, server_url, &routes, &cert_store).await;
+    let tl = reload_all(&client, server_url, &routes, &cfg.redirect_domains, &cert_store).await;
     schedule_refresh(&mut reload_timer, tl);
 
     loop {
@@ -405,7 +417,7 @@ async fn sync_loop(
                 // Reload on connect, exactly like on a reload event: anything
                 // that changed while we weren't connected was never signalled.
                 tracing::info!("SSE connected, reloading");
-                let tl = reload_all(&client, server_url, &routes, &cert_store).await;
+                let tl = reload_all(&client, server_url, &routes, &cfg.redirect_domains, &cert_store).await;
                 schedule_refresh(&mut reload_timer, tl);
 
                 let mut stream = resp.bytes_stream().eventsource();
@@ -430,7 +442,7 @@ async fn sync_loop(
 
                     // Both reload_timer and SSE reload events fall through here.
                     // On failure, schedule_refresh sets a 5s retry via reload_timer.
-                    let tl = reload_all(&client, server_url, &routes, &cert_store).await;
+                    let tl = reload_all(&client, server_url, &routes, &cfg.redirect_domains, &cert_store).await;
                     schedule_refresh(&mut reload_timer, tl);
                 }
             }
@@ -441,7 +453,7 @@ async fn sync_loop(
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // Reload before reconnecting so we have fresh data even if SSE takes a while.
-        let tl = reload_all(&client, server_url, &routes, &cert_store).await;
+        let tl = reload_all(&client, server_url, &routes, &cfg.redirect_domains, &cert_store).await;
         schedule_refresh(&mut reload_timer, tl);
     }
 }

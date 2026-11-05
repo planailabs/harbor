@@ -181,6 +181,34 @@ async fn cert_renewal_tick(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     .fetch_all(pool)
     .await?;
 
+    // Harbor's own hostname and its redirect domains need certificates too.
+    // The proxy also asks for them; this covers the time it isn't running.
+    // Renewal is the expiring-cert pass above, like every other cert.
+    let own_domains: Vec<String> = config::config()
+        .proxy
+        .as_ref()
+        .map(|p| {
+            std::iter::once(&p.domain)
+                .chain(&p.redirect_domains)
+                .map(|d| d.to_lowercase())
+                .collect()
+        })
+        .unwrap_or_default();
+    let own_missing: Vec<String> = sqlx::query_scalar(
+        "SELECT d FROM unnest($1::text[]) AS d \
+         WHERE NOT EXISTS (SELECT 1 FROM certificates c WHERE c.domain = d \
+               AND NOT (c.acme_status = 'failed' AND c.updated_at < now() - interval '1 hour'))",
+    )
+    .bind(&own_domains)
+    .fetch_all(pool)
+    .await?;
+    let mut missing = missing;
+    for d in own_missing {
+        if !missing.contains(&d) {
+            missing.push(d);
+        }
+    }
+
     for domain in &missing {
         tracing::info!(domain, "issuing cert for new domain");
         match api::acme::issue_cert(pool, domain).await {

@@ -19,14 +19,17 @@ fn main() {
     let cfg = config::load();
     tracing::info!(
         domain = %cfg.domain,
+        redirect_domains = ?cfg.redirect_domains,
         http = %cfg.http_addr,
         https = %cfg.https_addr,
         "starting harbor-proxy"
     );
 
     // Generate self-signed fallback cert
+    let own_domains = cfg.own_domains();
+    let own_domains: Vec<&str> = own_domains.iter().map(String::as_str).collect();
     let fallback =
-        self_signed::generate(&[&cfg.domain]).expect("failed to generate self-signed cert");
+        self_signed::generate(&own_domains).expect("failed to generate self-signed cert");
     tracing::info!("generated self-signed fallback cert");
 
     // Build shared state

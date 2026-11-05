@@ -37,6 +37,7 @@ in
         {
           proxy = {
             domain = "harbor.example.com";
+            redirect_domains = [ "agency.example.com" ];
             upstream = "127.0.0.1:7380";
             http_addr = "[::]:80";
             https_addr = "[::]:443";

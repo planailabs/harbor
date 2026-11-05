@@ -167,6 +167,10 @@ pub struct LocalHostingConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
     pub domain: String,
+    /// Old hostnames of Harbor, which the proxy redirects to `domain`. The
+    /// server keeps certificates for them as it does for `domain`.
+    #[serde(default)]
+    pub redirect_domains: Vec<String>,
     #[serde(default = "default_upstream")]
     pub upstream: String,
     pub acme_email: Option<String>,

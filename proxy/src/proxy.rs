@@ -116,6 +116,8 @@ enum HostState {
 pub struct HarborProxy {
     pub routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
     pub domain: String,
+    /// Old hostnames of Harbor (lowercase), answered with a 308 to `domain`.
+    pub redirect_domains: Vec<String>,
     pub internal_token: String,
     /// Base URL of the Harbor server's internal API (basic-auth verify/session).
     pub server_url: String,
@@ -662,6 +664,16 @@ impl ProxyHttp for HarborProxy {
         let host = extract_host(session);
         let req_path = session.req_header().uri.path().to_string();
 
+        // Harbor's old hostnames: the same scheme, path and query on `domain`,
+        // before any routing (they have no routes of their own).
+        if self.redirect_domains.contains(&host) {
+            let location =
+                domain_redirect_location(is_tls(session), &self.domain, &session.req_header().uri);
+            self.send_redirect_status(session, 308, &location, None)
+                .await?;
+            return Ok(true);
+        }
+
         // Tarball uploads to the deploy API can stream for many minutes. The
         // default downstream read timeout (60s) would abort them mid-upload, so
         // give these requests up to an hour. Scoped to the deploy POST route.
@@ -1078,6 +1090,13 @@ fn names_frame_ancestors(csp: &str) -> bool {
     })
 }
 
+/// Where a request for a redirect domain is sent: the same scheme, path and
+/// query on Harbor's `domain`.
+fn domain_redirect_location(tls: bool, domain: &str, uri: &http::Uri) -> String {
+    let scheme = if tls { "https" } else { "http" };
+    format!("{scheme}://{domain}{}", safe_path_and_query(uri))
+}
+
 /// Where a plain-HTTP request is sent: the same path and query on HTTPS.
 fn https_redirect_location(host: &str, uri: &http::Uri) -> String {
     format!("https://{host}{}", safe_path_and_query(uri))
@@ -1218,6 +1237,11 @@ pub fn build_service(
     let proxy = HarborProxy {
         routes,
         domain: cfg.domain.clone(),
+        redirect_domains: cfg
+            .redirect_domains
+            .iter()
+            .map(|d| d.to_lowercase())
+            .collect(),
         internal_token,
         server_url: cfg.server_url.trim_end_matches('/').to_string(),
         client,
@@ -1239,8 +1263,25 @@ pub fn build_service(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_security_headers, host_folders, HeaderPolicy, https_redirect_location, rewrite_redirect_location,
+        apply_security_headers, domain_redirect_location, host_folders, HeaderPolicy,
+        https_redirect_location, rewrite_redirect_location,
     };
+
+    #[test]
+    fn redirect_domain_keeps_scheme_path_and_query() {
+        let loc = |tls: bool, uri: &str| {
+            domain_redirect_location(tls, "harbor.plan.ai", &uri.parse().unwrap())
+        };
+        assert_eq!(
+            loc(true, "/harbor/basic/profile?x=1"),
+            "https://harbor.plan.ai/harbor/basic/profile?x=1"
+        );
+        assert_eq!(loc(false, "/"), "http://harbor.plan.ai/");
+        assert_eq!(
+            loc(true, "https://agency.plan.ai/api/v1?a=b"),
+            "https://harbor.plan.ai/api/v1?a=b"
+        );
+    }
 
     #[test]
     fn https_redirect_keeps_path_and_query() {

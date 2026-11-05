@@ -10,7 +10,12 @@ struct ConfigFile {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
+    /// Harbor's own hostname (the web UI and API).
     pub domain: String,
+    /// Old hostnames of Harbor: requests for them get a 308 to the same
+    /// path on `domain`. They get certificates like `domain` does.
+    #[serde(default)]
+    pub redirect_domains: Vec<String>,
     #[serde(default = "default_http_addr")]
     pub http_addr: String,
     #[serde(default = "default_https_addr")]
@@ -35,6 +40,15 @@ fn default_server_url() -> String {
 }
 
 impl ProxyConfig {
+    /// `domain` and every redirect domain: the names this proxy answers for
+    /// itself and needs certificates for.
+    pub fn own_domains(&self) -> Vec<String> {
+        std::iter::once(&self.domain)
+            .chain(&self.redirect_domains)
+            .map(|d| d.to_lowercase())
+            .collect()
+    }
+
     /// Read the internal API token. The token file is provisioned by the
     /// Harbor server and may not exist yet when the proxy starts, so we
     /// wait for it to appear rather than crashing.

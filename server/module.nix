@@ -179,6 +179,7 @@ in
       in
       {
         domain = lib.mkIf (p ? domain) (lib.mkDefault p.domain);
+        redirect_domains = lib.mkIf (p ? redirect_domains) (lib.mkDefault p.redirect_domains);
         upstream = lib.mkDefault "127.0.0.1:${toString port}";
         server_url = lib.mkDefault "http://127.0.0.1:${toString port}";
         acme_email = lib.mkIf (p ? acme_email) (lib.mkDefault p.acme_email);
