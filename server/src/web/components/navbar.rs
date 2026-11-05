@@ -97,12 +97,41 @@ fn nav_items(is_admin: bool, show_billing: bool) -> Vec<NavItem> {
     items
 }
 
+/// Harbor's mark: an old sailing ship (two masts, square sails, flag) on the water.
+#[component]
+fn HarborLogo() -> Element {
+    rsx! {
+        svg {
+            class: "h-8 w-8 text-fg",
+            role: "img",
+            "aria-label": "Harbor",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.5",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            view_box: "0 0 24 24",
+            title { "Harbor" }
+            // masts (broken by the sails), flag
+            path { d: "M10 2v2.5M10 8v1M10 12.5v2M16.5 5.5v1M16.5 9v1M16.5 12.5v2M10 2l2.2.9-2.2.9" }
+            // square sails, two per mast
+            path { d: "M7.5 4.5h5c.7 1.2.7 2.3 0 3.5h-5c.7-1.2.7-2.3 0-3.5zM6.5 9h7c.8 1.2.8 2.3 0 3.5h-7c.8-1.2.8-2.3 0-3.5zM14.5 6.5h4c.5.8.5 1.7 0 2.5h-4c.5-.8.5-1.7 0-2.5zM14.3 10h4.4c.5.8.5 1.7 0 2.5h-4.4c.5-.8.5-1.7 0-2.5z" }
+            // forestay and bowsprit
+            path { d: "M16.5 5.5l6 6.8M20.5 14.5l2-2.2" }
+            // hull with a stern castle
+            path { d: "M2.5 14.5h19l-1.7 3.8a1.5 1.5 0 0 1-1.4.9H5.6a1.5 1.5 0 0 1-1.4-.9zM2.5 14.5v-2h3.5v2" }
+            // water
+            path { d: "M1.5 21.5c1.3 0 1.9-.8 3.2-.8s1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8 1.9-.8 3.2-.8 1.9.8 3.2.8" }
+        }
+    }
+}
+
 #[component]
 pub fn Sidebar(is_admin: bool, show_billing: bool) -> Element {
     rsx! {
         aside { class: "hidden xl:flex flex-col w-56 shrink-0 border-r border-border bg-surface-1",
             div { class: "h-14 flex items-center px-4 border-b border-border",
-                span { class: "text-lg font-bold text-fg", "WA" }
+                HarborLogo {}
             }
 
             NavLinkList { is_admin, show_billing, on_navigate: |_| {} }
@@ -174,7 +203,7 @@ pub fn MobileDrawer(is_admin: bool, show_billing: bool, is_open: Signal<bool>) -
 
             div { class: drawer_cls, id: "mobile-drawer",
                 div { class: "h-14 shrink-0 flex items-center justify-between px-4 border-b border-border",
-                    span { class: "text-lg font-bold text-fg", "WA" }
+                    HarborLogo {}
                     button {
                         class: "nav-icon-btn",
                         "aria-label": "Close menu",
