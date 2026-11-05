@@ -201,6 +201,18 @@ async fn check_host(
         }
     }
 
+    // Pages deployments made before the rename to Harbor carry the old marker
+    // until they are deployed again.
+    if !proxy_ok && host.kind == "cloudflare" {
+        let legacy_url = format!("https://{}/.well-known/web-agency.json", host.hostname);
+        if let Ok(resp) = wk_client.get(&legacy_url).send().await
+            && resp.status().is_success()
+            && let Ok(body) = resp.text().await
+        {
+            proxy_ok = body.contains("web-agency-pages");
+        }
+    }
+
     let latency_ms = start.elapsed().as_millis() as i32;
 
     // Upsert result

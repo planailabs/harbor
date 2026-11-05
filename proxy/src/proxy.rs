@@ -210,6 +210,11 @@ fn strip_mount_prefix(path: &str, prefix: &str) -> String {
     }
 }
 
+/// The basic-auth control paths under a gated folder.
+const CGI_BASE: &str = "/cgi-harbor/basic";
+/// Their name before the rename to Harbor, still accepted.
+const LEGACY_CGI_BASE: &str = "/cgi-webagency/basic";
+
 impl HarborProxy {
     /// Cookie-based basic-auth gate. Intercepts the `cgi-harbor/basic/*`
     /// control paths (login/logout/profile) and otherwise verifies the
@@ -225,6 +230,12 @@ impl HarborProxy {
         let mp = mount_prefix_clean(mount);
         let path_only = session.req_header().uri.path().to_string();
         let sub = strip_mount_prefix(&path_only, mount);
+        // Sites built before the rename to Harbor link to the old
+        // `cgi-webagency/basic` paths; keep answering them.
+        let sub = match sub.strip_prefix(LEGACY_CGI_BASE) {
+            Some(rest) => format!("{CGI_BASE}{rest}"),
+            None => sub,
+        };
 
         // JSON whoami at the cgi base path itself.
         if sub == "/cgi-harbor/basic" || sub == "/cgi-harbor/basic/" {
