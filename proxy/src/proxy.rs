@@ -845,6 +845,15 @@ impl ProxyHttp for HarborProxy {
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             let _ = upstream_request.insert_header("x-forwarded-for", addr.ip().to_string());
         }
+        // Same for scheme and host: TLS ends here, so without these an
+        // upstream rebuilds its URL as http:// and rejects the browser's
+        // https Origin (Astro's CSRF check 403s uploads on cms-agent).
+        let proto = if is_tls(session) { "https" } else { "http" };
+        let _ = upstream_request.insert_header("x-forwarded-proto", proto);
+        let host = extract_host(session);
+        if !host.is_empty() {
+            let _ = upstream_request.insert_header("x-forwarded-host", host);
+        }
 
         // Strip the folder mount prefix so a folder mounted at /api sees "/".
         if !ctx.mount_prefix.is_empty() && ctx.mount_prefix != "/" {
