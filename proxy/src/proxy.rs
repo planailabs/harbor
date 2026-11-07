@@ -542,10 +542,13 @@ impl HarborProxy {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
-        if let Some(cookie_val) = extract_cookie(cookies, "__proxy_gate") {
-            if self.validate_gate_cookie(&cookie_val, org_id) {
-                return Ok(false); // valid session
-            }
+        // Every value: a stale one sent first (another Path, an old org) must
+        // not hide the valid one, or the gate redirects forever.
+        if cookie_values(cookies, "__proxy_gate")
+            .iter()
+            .any(|v| self.validate_gate_cookie(v, org_id))
+        {
+            return Ok(false); // valid session
         }
 
         // 2. Check for ?__pg_token= callback from proxy-gate
