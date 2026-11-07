@@ -42,7 +42,8 @@ flake-check:
     - nix-image
   script:
     # VM-backed flake checks are resource-heavy; run them serially so one
-    # test VM cannot starve another until the NixOS backdoor times out.
+    # test VM cannot starve another until the NixOS backdoor times out. Each
+    # build still gets 4 cores (cargo -j $NIX_BUILD_CORES).
     #
     # `timeout:` is not the only way this job can die: GitLab also fails a
     # running job that stops sending trace updates for ~30 minutes
@@ -73,7 +74,7 @@ flake-check:
       # status line never runs and the real exit code is lost. The recorded
       # status then survives the `tee` in the pipeline instead of being
       # replaced by tee's 0.
-      ( set +e; nix flake check -L --max-jobs 1 2>&1; echo "$?" >"$status_file" ) | tee "$log"
+      ( set +e; nix flake check -L --max-jobs 1 --cores 4 2>&1; echo "$?" >"$status_file" ) | tee "$log"
       kill "$heartbeat" 2>/dev/null || true
       wait "$heartbeat" 2>/dev/null || true
       status="$(cat "$status_file" 2>/dev/null || true)"
