@@ -27,7 +27,7 @@ in
 rustPlatform.buildRustPackage {
   pname = "harbor-server";
   version = "0.1.0";
-  src = ../.;
+  src = import ../src.nix { inherit lib; };
   cargoLock.lockFile = ../Cargo.lock;
   cargoLock.outputHashes = import ../extra-hashes.nix;
 
