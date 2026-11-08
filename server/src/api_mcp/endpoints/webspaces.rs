@@ -13,7 +13,7 @@ use crate::web::user::{current_user, principal_from, to_serverfn};
 #[cfg(feature = "server")]
 use plan_ai_api_mcp::{ApiError, Principal};
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebspaceRow {
     pub id: Uuid,
     pub name: String,
@@ -312,13 +312,13 @@ pub async fn webspace_list(
 
     let rows = match principal.read_filter() {
         None => {
-            sqlx::query_as::<_, Row>(&format!("{query} ORDER BY h.name, w.path_prefix"))
+            sqlx::query_as::<_, Row>(&format!("{query} ORDER BY h.name, h.id, w.path_prefix"))
                 .fetch_all(pool)
                 .await
         }
         Some(org_ids) => {
             sqlx::query_as::<_, Row>(&format!(
-                "{query} WHERE w.organization_id = ANY($1) ORDER BY h.name, w.path_prefix"
+                "{query} WHERE w.organization_id = ANY($1) ORDER BY h.name, h.id, w.path_prefix"
             ))
             .bind(org_ids)
             .fetch_all(pool)

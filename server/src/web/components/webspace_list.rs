@@ -1,9 +1,12 @@
-//! Flat cross-host folder list. Each row is a `webspace` folder; domains,
-//! CNAME, and ChangeDetection are managed on the parent host.
+//! Cross-host folder list as a tree: organization card → host → folders.
+//! Domains, CNAME, and ChangeDetection are managed on the parent host.
 
 use dioxus::prelude::*;
 
-use super::ui::{Badge, BadgeVariant, Button, ButtonVariant, Card, PageHeader, Td, TdMuted, Th};
+use super::ui::{
+    Badge, BadgeVariant, Button, ButtonVariant, Card, OrgTreeCard, PageHeader, TreeItem, TreeList,
+    group_by_org,
+};
 
 // WebspaceRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::webspaces::{WebspaceListInput, WebspaceRow, list_webspaces};
@@ -67,80 +70,68 @@ pub fn WebspaceList() -> Element {
             }
         }
 
-        Card {
-            div { class: "overflow-x-auto",
-                table { class: "table w-full",
-                    thead {
-                        tr {
-                            Th { "Host" }
-                            Th { "Path" }
-                            Th { "Name" }
-                            Th { "Type" }
-                            Th { "Status" }
-                            Th { "Auth" }
-                            Th { "Org" }
-                        }
-                    }
-                    tbody {
-                        if filtered_rows.is_empty() {
-                            tr { td { class: "td text-fg-muted text-center", colspan: "7", "No folders yet" } }
-                        }
-                        for row in &filtered_rows {
-                            {
-                                let fid = row.id.to_string();
-                                let hid = row.host_id.to_string();
-                                rsx! {
-                                    tr { class: "hover:bg-surface-2",
-                                        Td {
-                                            Link {
-                                                to: crate::web::app::Route::WebspaceHostDetail { id: hid.clone() },
-                                                class: "text-brand underline",
-                                                "{row.host_name}"
-                                            }
+        if filtered_rows.is_empty() {
+            Card { div { class: "card-pad text-fg-muted text-center", "No folders yet" } }
+        }
+        for (org, rows) in group_by_org(filtered_rows.iter().copied(), |r| &r.organization_name) {
+            {
+                let hosts = rows.chunk_by(|a, b| a.host_id == b.host_id).map(<[_]>::to_vec).collect::<Vec<_>>();
+                let meta = format!("{} folders", rows.len());
+                rsx! {
+                    OrgTreeCard { key: "{org}", name: org.clone(), meta,
+                        for folders in hosts {
+                            TreeItem { key: "{folders[0].host_id}",
+                                div { class: "flex items-center gap-2 min-h-6",
+                                    Link {
+                                        to: crate::web::app::Route::WebspaceHostDetail { id: folders[0].host_id.to_string() },
+                                        class: "text-brand underline font-medium",
+                                        "{folders[0].host_name}"
+                                    }
+                                }
+                                TreeList {
+                                    for row in folders {
+                                        TreeItem { key: "{row.id}",
+                                            FolderNode { row: (*row).clone() }
                                         }
-                                        Td { class: "font-mono", "{row.path_prefix}" }
-                                        td { class: "td cursor-pointer",
-                                            onclick: move |_| { navigator().push(crate::web::app::Route::WebspaceDetail { id: fid.clone() }); },
-                                            "{row.name}"
-                                        }
-                                        Td {
-                                            match row.hosting_type.as_str() {
-                                                "cloudflare_pages" => rsx! { Badge { variant: BadgeVariant::Info, "CF Pages" } },
-                                                "local" => rsx! { Badge { "Local" } },
-                                                "relay" => rsx! { Badge { variant: BadgeVariant::Accent, "Relay" } },
-                                                "tunnel" => rsx! { Badge { variant: BadgeVariant::Accent, "Tunnel" } },
-                                                _ => rsx! { span { "-" } },
-                                            }
-                                        }
-                                        Td {
-                                            match (row.hosting_type.as_str(), row.local_status.as_deref()) {
-                                                ("local", Some("running")) => rsx! { Badge { variant: BadgeVariant::Success, "Running" } },
-                                                ("local", Some("error")) => rsx! { Badge { variant: BadgeVariant::Danger, "Error" } },
-                                                ("local", Some("starting")) => rsx! { Badge { variant: BadgeVariant::Warn, "Starting" } },
-                                                ("local", Some(_)) => rsx! { span { class: "text-fg-muted", "Stopped" } },
-                                                _ => {
-                                                    if let Some(ref rt) = row.runtime {
-                                                        rsx! { Badge { "{rt}" } }
-                                                    } else {
-                                                        rsx! { span { class: "text-fg-muted", "-" } }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Td {
-                                            match row.auth_mode.as_str() {
-                                                "oidc" => rsx! { Badge { variant: BadgeVariant::Info, "OIDC" } },
-                                                "basic" => rsx! { Badge { variant: BadgeVariant::Accent, "Basic" } },
-                                                _ => rsx! { span { class: "text-fg-muted", "-" } },
-                                            }
-                                        }
-                                        TdMuted { "{row.organization_name}" }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn FolderNode(row: WebspaceRow) -> Element {
+    let fid = row.id.to_string();
+    rsx! {
+        div { class: "flex items-center gap-2 flex-wrap min-h-6",
+            span { class: "font-mono text-sm", "{row.path_prefix}" }
+            Link { to: crate::web::app::Route::WebspaceDetail { id: fid }, class: "hover:underline", "{row.name}" }
+            match row.hosting_type.as_str() {
+                "cloudflare_pages" => rsx! { Badge { variant: BadgeVariant::Info, "CF Pages" } },
+                "local" => rsx! { Badge { "Local" } },
+                "relay" => rsx! { Badge { variant: BadgeVariant::Accent, "Relay" } },
+                "tunnel" => rsx! { Badge { variant: BadgeVariant::Accent, "Tunnel" } },
+                _ => rsx! {},
+            }
+            match (row.hosting_type.as_str(), row.local_status.as_deref()) {
+                ("local", Some("running")) => rsx! { Badge { variant: BadgeVariant::Success, "Running" } },
+                ("local", Some("error")) => rsx! { Badge { variant: BadgeVariant::Danger, "Error" } },
+                ("local", Some("starting")) => rsx! { Badge { variant: BadgeVariant::Warn, "Starting" } },
+                ("local", Some(_)) => rsx! { span { class: "text-sm text-fg-muted", "Stopped" } },
+                _ => match row.runtime {
+                    Some(ref rt) => rsx! { Badge { "{rt}" } },
+                    None => rsx! {},
+                },
+            }
+            match row.auth_mode.as_str() {
+                "oidc" => rsx! { Badge { variant: BadgeVariant::Info, "OIDC" } },
+                "basic" => rsx! { Badge { variant: BadgeVariant::Accent, "Basic" } },
+                _ => rsx! {},
             }
         }
     }

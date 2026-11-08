@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ui::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, PageHeader, Td, TdMuted, Th,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgTreeCard, PageHeader, TreeItem,
+    group_by_org,
 };
 
 // HostRow + the list/bulk-ChangeDetection endpoints now live in the shared
@@ -32,7 +33,10 @@ async fn list_cd_creds_for_bulk() -> Result<Vec<CdCredOption>, ServerFnError> {
     let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
     let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
-        &pool, &user, &["changedetection"], &[],
+        &pool,
+        &user,
+        &["changedetection"],
+        &[],
     )
     .await?;
     Ok(rows
@@ -229,88 +233,59 @@ pub fn WebspaceHostList() -> Element {
             }
         }
 
-        Card {
-            div { class: "overflow-x-auto",
-                table { class: "table w-full",
-                    thead {
-                        tr {
-                            th { class: "th w-8",
-                                input {
-                                    r#type: "checkbox",
-                                    checked: sel_count > 0 && sel_count == filtered_count,
-                                    oninput: {
-                                        let all = filtered_ids.clone();
-                                        move |evt| {
+        if filtered_rows.is_empty() {
+            Card { div { class: "card-pad text-fg-muted text-center", "No hosts yet" } }
+        } else {
+            label { class: "mb-2 flex items-center gap-2 text-sm text-fg-muted",
+                input {
+                    r#type: "checkbox",
+                    checked: sel_count > 0 && sel_count == filtered_count,
+                    oninput: {
+                        let all = filtered_ids.clone();
+                        move |evt| selected.set(if evt.checked() { all.clone() } else { vec![] })
+                    }
+                }
+                "Select all"
+            }
+        }
+        for (org, rows) in group_by_org(filtered_rows.iter().copied(), |r| &r.organization_name) {
+            OrgTreeCard { key: "{org}", name: org.clone(), meta: format!("{} hosts", rows.len()),
+                for row in rows {
+                    {
+                        let rid = row.id;
+                        let is_selected = selected.read().contains(&rid);
+                        rsx! {
+                            TreeItem { key: "{rid}",
+                                div { class: "flex items-center gap-2 flex-wrap min-h-6 cursor-pointer rounded hover:bg-surface-2",
+                                    onclick: {
+                                        let id = rid.to_string();
+                                        move |_| { navigator().push(crate::web::app::Route::WebspaceHostDetail { id: id.clone() }); }
+                                    },
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: is_selected,
+                                        onclick: move |evt| { evt.stop_propagation(); },
+                                        oninput: move |evt| {
+                                            let mut sel = selected.write();
                                             if evt.checked() {
-                                                selected.set(all.clone());
+                                                if !sel.contains(&rid) { sel.push(rid); }
                                             } else {
-                                                selected.set(vec![]);
+                                                sel.retain(|&id| id != rid);
                                             }
                                         }
                                     }
-                                }
-                            }
-                            Th { "Name" }
-                            Th { "Kind" }
-                            Th { "Hostname" }
-                            Th { "Folders" }
-                            Th { "CD" }
-                            Th { "Org" }
-                        }
-                    }
-                    tbody {
-                        if filtered_rows.is_empty() {
-                            tr { td { class: "td text-fg-muted text-center", colspan: "7", "No hosts yet" } }
-                        }
-                        for row in &filtered_rows {
-                            {
-                                let rid = row.id;
-                                let is_selected = selected.read().contains(&rid);
-                                rsx! {
-                                    tr { class: "cursor-pointer hover:bg-surface-2",
-                                        onclick: {
-                                            let id = rid.to_string();
-                                            move |_| { navigator().push(crate::web::app::Route::WebspaceHostDetail { id: id.clone() }); }
-                                        },
-                                        td { class: "td w-8",
-                                            input {
-                                                r#type: "checkbox",
-                                                checked: is_selected,
-                                                onclick: move |evt| { evt.stop_propagation(); },
-                                                oninput: move |evt| {
-                                                    let mut sel = selected.write();
-                                                    if evt.checked() {
-                                                        if !sel.contains(&rid) { sel.push(rid); }
-                                                    } else {
-                                                        sel.retain(|&id| id != rid);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Td { "{row.name}" }
-                                        Td {
-                                            if row.kind == "cloudflare" {
-                                                Badge { variant: BadgeVariant::Info, "Cloudflare" }
-                                            } else {
-                                                Badge { variant: BadgeVariant::Accent, "Proxy" }
-                                            }
-                                        }
-                                        Td {
-                                            if let Some(ref h) = row.hostname {
-                                                span { class: "font-mono text-sm", "{h}" }
-                                            } else {
-                                                span { class: "text-fg-muted", "-" }
-                                            }
-                                        }
-                                        Td { "{row.folder_count}" }
-                                        Td {
-                                            if row.has_changedetection {
-                                                Badge { variant: BadgeVariant::Success, "Yes" }
-                                            } else {
-                                                span { class: "text-fg-muted", "-" }
-                                            }
-                                        }
-                                        TdMuted { "{row.organization_name}" }
+                                    span { class: "font-medium", "{row.name}" }
+                                    if row.kind == "cloudflare" {
+                                        Badge { variant: BadgeVariant::Info, "Cloudflare" }
+                                    } else {
+                                        Badge { variant: BadgeVariant::Accent, "Proxy" }
+                                    }
+                                    if let Some(ref h) = row.hostname {
+                                        span { class: "font-mono text-sm text-fg-muted", "{h}" }
+                                    }
+                                    span { class: "text-sm text-fg-muted", "· {row.folder_count} folders" }
+                                    if row.has_changedetection {
+                                        Badge { variant: BadgeVariant::Success, "CD" }
                                     }
                                 }
                             }
