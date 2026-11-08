@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::ui::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgGroup, OrgTreeCard, PageHeader,
-    Td, Th, TreeTd, group_by_org,
+    Td, Th, TreeTd, TreeTh, group_by_org,
 };
 
 // DomainRow, the list endpoint and the bulk operations now live in the shared
@@ -388,7 +388,7 @@ pub fn DomainList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta: format!("{n} domains"), cols: 6,
                         head: rsx! {
-                            Th { "Domain" }
+                            TreeTh { checkbox: true, "Domain" }
                             Th { "Registrar" }
                             Th { "SSL" }
                             Th { "DNSSEC" }

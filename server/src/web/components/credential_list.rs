@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 
-use super::ui::{Card, OrgGroup, OrgTreeCard, PageHeader, Td, TdMuted, Th, TreeTd, group_by_org};
+use super::ui::{
+    Card, OrgGroup, OrgTreeCard, PageHeader, Td, TdMuted, Th, TreeTd, TreeTh, group_by_org,
+};
 
 // CredentialRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::credentials::{CredentialListInput, list_credentials};
@@ -56,7 +58,7 @@ pub fn CredentialList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{name}", id, name: name.clone(), meta: format!("{n} credentials"), cols: 3,
                         head: rsx! {
-                            Th { "Name" }
+                            TreeTh { "Name" }
                             Th { "Type" }
                             Th { "Created" }
                         },

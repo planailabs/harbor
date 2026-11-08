@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use super::ui::{Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th, TreeTd, group_by_org};
+use super::ui::{Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th, TreeTd, TreeTh, group_by_org};
 
 // BasicAuthListRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::basic_auth::{BasicAuthListInput, list_basic_auth_lists};
@@ -29,7 +29,7 @@ pub fn BasicAuthList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{name}", id, name: name.clone(), meta: format!("{n} lists"), cols: 2,
                         head: rsx! {
-                            Th { "Name" }
+                            TreeTh { "Name" }
                             Th { "Credentials" }
                         },
                         for (i, row) in rows.into_iter().enumerate() {

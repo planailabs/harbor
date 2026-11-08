@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 
 use super::ui::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th,
-    TreeTd, group_by_org,
+    TreeTd, TreeTh, group_by_org,
 };
 
 // WebspaceRow + the list endpoint now live in the shared api_mcp layer.
@@ -82,7 +82,7 @@ pub fn WebspaceList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta, cols: 5,
                         head: rsx! {
-                            Th { "Name" }
+                            TreeTh { "Name" }
                             Th { "Path" }
                             Th { "Type" }
                             Th { "Status" }

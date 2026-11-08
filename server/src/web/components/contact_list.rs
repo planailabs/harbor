@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
 use super::ui::{
-    Badge, BadgeVariant, Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th, TreeTd, group_by_org,
+    Badge, BadgeVariant, Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th, TreeTd, TreeTh,
+    group_by_org,
 };
 
 // ContactRow + the list endpoint now live in the shared api_mcp layer.
@@ -36,7 +37,7 @@ pub fn ContactList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{name}", id, name: name.clone(), meta: format!("{n} contacts"), cols: 5,
                         head: rsx! {
-                            Th { "Label" }
+                            TreeTh { "Label" }
                             Th { "Name" }
                             Th { "Email" }
                             Th { "Country" }

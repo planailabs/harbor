@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::ui::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgGroup, OrgTreeCard, PageHeader,
-    Td, Th, TreeTd, group_by_org,
+    Td, Th, TreeTd, TreeTh, group_by_org,
 };
 
 // HostRow + the list/bulk-ChangeDetection endpoints now live in the shared
@@ -254,7 +254,7 @@ pub fn WebspaceHostList() -> Element {
                 rsx! {
                     OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta: format!("{n} hosts"), cols: 5,
                         head: rsx! {
-                            Th { "Name" }
+                            TreeTh { checkbox: true, "Name" }
                             Th { "Kind" }
                             Th { "Hostname" }
                             Th { "Folders" }

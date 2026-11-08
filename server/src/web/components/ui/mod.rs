@@ -98,14 +98,34 @@ pub fn OrgTreeCard(
     }
 }
 
+/// rem offset of the level-0 tree line (td px-6 + half the 2rem org icon),
+/// and how far a node's content sits right of its line.
+const TREE_X0: f32 = 2.5;
+const TREE_INDENT: f32 = 1.5;
+
+/// Header for the tree column, aligned with level-0 node labels. `checkbox`
+/// reserves the width of the row checkboxes that precede those labels.
+#[component]
+pub fn TreeTh(#[props(default)] checkbox: bool, children: Element) -> Element {
+    let pad = TREE_X0 + TREE_INDENT;
+    rsx! {
+        th { class: "th", style: "padding-left: {pad}rem",
+            if checkbox {
+                input { r#type: "checkbox", class: "mr-2 invisible", tabindex: "-1", aria_hidden: "true" }
+            }
+            {children}
+        }
+    }
+}
+
 /// First cell of a tree row. `guides[i]` = ancestor at level i has later
 /// siblings (keep its line running); `last` = this node is its parent's last
 /// child. Level 0 lines up with the org icon's centre (td px-6 + 1rem).
 #[component]
 pub fn TreeTd(#[props(default)] guides: Vec<bool>, last: bool, children: Element) -> Element {
-    let x = |level: usize| 2.5 + level as f32 * 1.5;
+    let x = |level: usize| TREE_X0 + level as f32 * 1.5;
     let depth = guides.len();
-    let pad = x(depth) + 1.5;
+    let pad = x(depth) + TREE_INDENT;
     rsx! {
         td { class: "td relative whitespace-nowrap", style: "padding-left: {pad}rem",
             for (i, _) in guides.iter().enumerate().filter(|(_, g)| **g) {
