@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ui::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgTreeCard, PageHeader, TreeItem,
-    group_by_org,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgTreeCard, PageHeader, Td, Th,
+    TreeTd, group_by_org,
 };
 
 // HostRow + the list/bulk-ChangeDetection endpoints now live in the shared
@@ -249,43 +249,66 @@ pub fn WebspaceHostList() -> Element {
             }
         }
         for (org, rows) in group_by_org(filtered_rows.iter().copied(), |r| &r.organization_name) {
-            OrgTreeCard { key: "{org}", name: org.clone(), meta: format!("{} hosts", rows.len()),
-                for row in rows {
-                    {
-                        let rid = row.id;
-                        let is_selected = selected.read().contains(&rid);
-                        rsx! {
-                            TreeItem { key: "{rid}",
-                                div { class: "flex items-center gap-2 flex-wrap min-h-6 cursor-pointer rounded hover:bg-surface-2",
-                                    onclick: {
-                                        let id = rid.to_string();
-                                        move |_| { navigator().push(crate::web::app::Route::WebspaceHostDetail { id: id.clone() }); }
-                                    },
-                                    input {
-                                        r#type: "checkbox",
-                                        checked: is_selected,
-                                        onclick: move |evt| { evt.stop_propagation(); },
-                                        oninput: move |evt| {
-                                            let mut sel = selected.write();
-                                            if evt.checked() {
-                                                if !sel.contains(&rid) { sel.push(rid); }
+            {
+                let n = rows.len();
+                rsx! {
+                    OrgTreeCard { key: "{org}", name: org.clone(), meta: format!("{n} hosts"), cols: 5,
+                        head: rsx! {
+                            Th { "Name" }
+                            Th { "Kind" }
+                            Th { "Hostname" }
+                            Th { "Folders" }
+                            Th { "CD" }
+                        },
+                        for (i, row) in rows.into_iter().enumerate() {
+                            {
+                                let rid = row.id;
+                                let is_selected = selected.read().contains(&rid);
+                                rsx! {
+                                    tr { key: "{rid}", class: "cursor-pointer hover:bg-surface-2",
+                                        onclick: {
+                                            let id = rid.to_string();
+                                            move |_| { navigator().push(crate::web::app::Route::WebspaceHostDetail { id: id.clone() }); }
+                                        },
+                                        TreeTd { last: i + 1 == n,
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "mr-2",
+                                                checked: is_selected,
+                                                onclick: move |evt| { evt.stop_propagation(); },
+                                                oninput: move |evt| {
+                                                    let mut sel = selected.write();
+                                                    if evt.checked() {
+                                                        if !sel.contains(&rid) { sel.push(rid); }
+                                                    } else {
+                                                        sel.retain(|&id| id != rid);
+                                                    }
+                                                }
+                                            }
+                                            "{row.name}"
+                                        }
+                                        Td {
+                                            if row.kind == "cloudflare" {
+                                                Badge { variant: BadgeVariant::Info, "Cloudflare" }
                                             } else {
-                                                sel.retain(|&id| id != rid);
+                                                Badge { variant: BadgeVariant::Accent, "Proxy" }
                                             }
                                         }
-                                    }
-                                    span { class: "font-medium", "{row.name}" }
-                                    if row.kind == "cloudflare" {
-                                        Badge { variant: BadgeVariant::Info, "Cloudflare" }
-                                    } else {
-                                        Badge { variant: BadgeVariant::Accent, "Proxy" }
-                                    }
-                                    if let Some(ref h) = row.hostname {
-                                        span { class: "font-mono text-sm text-fg-muted", "{h}" }
-                                    }
-                                    span { class: "text-sm text-fg-muted", "· {row.folder_count} folders" }
-                                    if row.has_changedetection {
-                                        Badge { variant: BadgeVariant::Success, "CD" }
+                                        Td {
+                                            if let Some(ref h) = row.hostname {
+                                                span { class: "font-mono text-sm", "{h}" }
+                                            } else {
+                                                span { class: "text-fg-muted", "-" }
+                                            }
+                                        }
+                                        Td { "{row.folder_count}" }
+                                        Td {
+                                            if row.has_changedetection {
+                                                Badge { variant: BadgeVariant::Success, "Yes" }
+                                            } else {
+                                                span { class: "text-fg-muted", "-" }
+                                            }
+                                        }
                                     }
                                 }
                             }
