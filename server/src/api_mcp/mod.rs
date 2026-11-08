@@ -342,6 +342,16 @@ pub fn build_registry(pool: sqlx::PgPool) -> plan_ai_api_mcp::Registry<sqlx::PgP
             },
         )
         .admin_only();
+        o.delete(
+            "Delete an organization and everything it holds (admin only): its webspace hosts \
+             with the CNAMEs and Cloudflare custom domains they published, webspaces and their \
+             files, domains (forgotten here; the zone at the registrar stays), credentials, \
+             contacts, tokens and members. Permanent.",
+            |pool: sqlx::PgPool, p, input: endpoints::organizations::OrgDeleteInput| async move {
+                endpoints::organizations::organization_delete(&pool, &p, input).await
+            },
+        )
+        .admin_only();
         // Collection verbs: the inputs carry organization_id + user selector, so
         // no `{id}` path segment to merge.
         o.custom(

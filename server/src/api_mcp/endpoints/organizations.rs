@@ -267,3 +267,229 @@ pub async fn organization_member_remove(
 
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OrgDeleteInput {
+    pub id: Uuid,
+}
+
+/// What an organization took with it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OrgDeleted {
+    pub webspace_hosts: i64,
+    pub webspaces: i64,
+    pub domains: i64,
+}
+
+/// Delete an organization and everything it holds (admin only).
+///
+/// Webspace hosts go first through `host_delete`, which takes down the CNAMEs
+/// and Cloudflare custom domains they published; a host it can't remove stops
+/// the delete, with nothing else touched, so it can be run again. Their
+/// webspaces go with them. Then, in one transaction, the basic-auth lists
+/// (they don't cascade) and the organization, whose rows do: domains,
+/// credentials, contacts, tokens, members, billing. A domain is only forgotten — the zone at the registrar or
+/// Cloudflare is the customer's and stays. Last, the static webspaces' files.
+#[api_mcp_dioxus_server(server = "delete_organization")]
+pub async fn organization_delete(
+    pool: &sqlx::PgPool,
+    principal: &Principal,
+    input: OrgDeleteInput,
+) -> Result<OrgDeleted, ApiError> {
+    principal.require_admin()?;
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1)")
+            .bind(input.id)
+            .fetch_one(pool)
+            .await
+            .map_err(super::internal)?;
+    if !exists {
+        return Err(ApiError::not_found("organization not found"));
+    }
+
+    // Before the hosts go: deleting one cascades to its webspaces, whose
+    // files are removed at the end.
+    let webspaces =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM webspaces WHERE organization_id = $1")
+            .bind(input.id)
+            .fetch_all(pool)
+            .await
+            .map_err(super::internal)?;
+    let hosts =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM webspace_hosts WHERE organization_id = $1")
+            .bind(input.id)
+            .fetch_all(pool)
+            .await
+            .map_err(super::internal)?;
+    for id in &hosts {
+        super::webspace_hosts::host_delete(
+            pool,
+            principal,
+            super::webspace_hosts::HostDeleteInput { id: *id },
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("webspace host {id}: {e}")))?;
+    }
+
+    let mut tx = pool.begin().await.map_err(super::internal)?;
+    let domains =
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM domains WHERE organization_id = $1")
+            .bind(input.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(super::internal)?;
+    sqlx::query("DELETE FROM basic_auth_lists WHERE organization_id = $1")
+        .bind(input.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            ApiError::conflict(format!(
+                "its basic-auth lists are still in use elsewhere: {e}"
+            ))
+        })?;
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(input.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| ApiError::conflict(format!("something outside it still refers to it: {e}")))?;
+    tx.commit().await.map_err(super::internal)?;
+
+    for id in &webspaces {
+        let dir = crate::local_hosting::webspace_dir(*id);
+        match tokio::fs::remove_dir_all(&dir).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), "files of a deleted webspace left behind: {e}")
+            }
+        }
+    }
+    crate::api::internal::notify_proxy_reload();
+    tracing::info!(organization = %input.id, by = %principal.subject, "organization deleted");
+
+    Ok(OrgDeleted {
+        webspace_hosts: hosts.len() as i64,
+        webspaces: webspaces.len() as i64,
+        domains,
+    })
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+
+    /// Against a real schema: everything an organization holds goes, the
+    /// basic-auth lists that don't cascade included; others are untouched.
+    #[tokio::test]
+    async fn deleting_an_organization_takes_what_it_holds() {
+        let (_db, pool) = crate::credentials::pg_tests::test_db().await;
+        let admin = Principal::admin("test");
+        let org = |name: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, Uuid>(
+                    "INSERT INTO organizations (name) VALUES ($1) RETURNING id",
+                )
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        let gone = org("gone").await;
+        let kept = org("kept").await;
+        for o in [gone, kept] {
+            sqlx::query("INSERT INTO domains (organization_id, name) VALUES ($1, $2)")
+                .bind(o)
+                .bind(format!("{o}.example"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let list = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO basic_auth_lists (organization_id, name) VALUES ($1, 'l') RETURNING id",
+        )
+        .bind(gone)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let host = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO webspace_hosts (organization_id, name, kind) VALUES ($1, 'h', 'proxy') RETURNING id",
+        )
+        .bind(gone)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        // both behind the list, which doesn't cascade
+        let mut dirs = Vec::new();
+        for (name, path) in [("w1", "/"), ("w2", "/b")] {
+            let id = sqlx::query_scalar::<_, Uuid>(
+                "INSERT INTO webspaces (organization_id, name, hosting_type, runtime, webspace_host_id, auth_mode, auth_basic_list_id, path_prefix) \
+                 VALUES ($1, $4, 'local', 'static', $2, 'basic', $3, $5) RETURNING id",
+            )
+            .bind(gone)
+            .bind(host)
+            .bind(list)
+            .bind(name)
+            .bind(path)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let dir = crate::local_hosting::webspace_dir(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("index.html"), "hi").unwrap();
+            dirs.push(dir);
+        }
+
+        let done = organization_delete(&pool, &admin, OrgDeleteInput { id: gone })
+            .await
+            .unwrap();
+        assert_eq!(
+            done,
+            OrgDeleted {
+                webspace_hosts: 1,
+                webspaces: 2,
+                domains: 1
+            }
+        );
+        let left = |table: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>(&format!(
+                    "SELECT count(*) FROM {table} WHERE organization_id = $1"
+                ))
+                .bind(gone)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        for dir in &dirs {
+            assert!(!dir.exists(), "{}", dir.display());
+        }
+        for table in ["domains", "webspaces", "webspace_hosts", "basic_auth_lists"] {
+            assert_eq!(left(table).await, 0, "{table}");
+        }
+        let kept_domains =
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM domains WHERE organization_id = $1")
+                .bind(kept)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(kept_domains, 1);
+
+        assert!(matches!(
+            organization_delete(&pool, &admin, OrgDeleteInput { id: gone }).await,
+            Err(ApiError::NotFound(_))
+        ));
+        let nobody = Principal {
+            admin: false,
+            ..Principal::admin("x")
+        };
+        assert!(
+            organization_delete(&pool, &nobody, OrgDeleteInput { id: kept })
+                .await
+                .is_err()
+        );
+    }
+}
