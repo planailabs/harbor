@@ -28,6 +28,7 @@ pub struct DomainRow {
     pub dnssec_enabled: bool,
     pub cloudflare_zone_id: Option<String>,
     pub expires_at: Option<String>,
+    pub organization_id: Uuid,
     pub organization_name: String,
     /// Whether nameservers can be set at the registrar (spaceship + credential).
     pub can_set_nameservers: bool,
@@ -285,6 +286,7 @@ pub async fn domain_list(
         bool,
         Option<String>,
         Option<chrono::DateTime<chrono::Utc>>,
+        Uuid,
         String,
         Option<String>,
         Option<Uuid>,
@@ -294,7 +296,7 @@ pub async fn domain_list(
         bool,
     );
 
-    let query = "SELECT d.id, d.name, d.registrar_type, d.ssl_mode, d.dnssec_enabled, d.cloudflare_zone_id, d.expires_at, o.name, \
+    let query = "SELECT d.id, d.name, d.registrar_type, d.ssl_mode, d.dnssec_enabled, d.cloudflare_zone_id, d.expires_at, o.id, o.name, \
          d.registrar_type, d.registrar_credential_id, d.ns_ok, \
          EXISTS(SELECT 1 FROM webspace_host_domains whd WHERE whd.domain_id = d.id) AS has_webspace, \
          d.ai_bots_protection, \
@@ -329,6 +331,7 @@ pub async fn domain_list(
                 dnssec_enabled,
                 cloudflare_zone_id,
                 expires_at,
+                organization_id,
                 organization_name,
                 reg_type,
                 reg_cred_id,
@@ -344,6 +347,7 @@ pub async fn domain_list(
                 dnssec_enabled,
                 cloudflare_zone_id,
                 expires_at: expires_at.map(|d| d.format("%Y-%m-%d").to_string()),
+                organization_id,
                 organization_name,
                 can_set_nameservers: reg_type.as_deref() == Some("spaceship")
                     && reg_cred_id.is_some(),

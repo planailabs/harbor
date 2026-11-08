@@ -9,17 +9,54 @@ pub use plan_ai_design::{
     TdMuted, Th, TokenCreateForm, TokenCreateInput, TokenReveal, TokenRow, TokenTable,
 };
 
-/// Groups rows by organization name (unique in the DB), orgs sorted by name,
-/// row order within an org preserved.
+/// One organization's rows. `id` is `None` for org-less (global) rows.
+pub struct OrgGroup<'a, T> {
+    pub id: Option<uuid::Uuid>,
+    pub name: String,
+    pub rows: Vec<&'a T>,
+}
+
+/// Groups rows by organization, orgs sorted by name (global rows, `None`,
+/// last), row order within an org preserved.
 pub fn group_by_org<'a, T>(
     rows: impl IntoIterator<Item = &'a T>,
-    org: impl Fn(&T) -> &str,
-) -> Vec<(String, Vec<&'a T>)> {
-    let mut groups: std::collections::BTreeMap<String, Vec<&'a T>> = Default::default();
+    org: impl Fn(&T) -> (Option<uuid::Uuid>, &str),
+) -> Vec<OrgGroup<'a, T>> {
+    let mut groups: std::collections::BTreeMap<(bool, String, Option<uuid::Uuid>), Vec<&'a T>> =
+        Default::default();
     for r in rows {
-        groups.entry(org(r).to_string()).or_default().push(r);
+        let (id, name) = org(r);
+        groups
+            .entry((id.is_none(), name.to_string(), id))
+            .or_default()
+            .push(r);
     }
-    groups.into_iter().collect()
+    groups
+        .into_iter()
+        .map(|((_, name, id), rows)| OrgGroup { id, name, rows })
+        .collect()
+}
+
+/// Round letter icon for an organization. The colour is derived from the org
+/// id, so it is stable across pages and reloads; `None` (global) is neutral.
+#[component]
+pub fn OrgIcon(id: Option<uuid::Uuid>, name: String) -> Element {
+    let letter = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default();
+    let base = "w-8 h-8 shrink-0 rounded-full flex items-center justify-center font-semibold";
+    match id {
+        Some(id) => {
+            let b = id.as_bytes();
+            let hue = u16::from_be_bytes([b[0], b[1]]) % 360;
+            rsx! {
+                span { class: "{base} text-white", style: "background-color: hsl({hue} 60% 42%)", "{letter}" }
+            }
+        }
+        None => rsx! { span { class: "{base} bg-surface-3 text-fg-muted", "{letter}" } },
+    }
 }
 
 /// Outer card for one organization: its own column header (`head`), then the
@@ -27,17 +64,13 @@ pub fn group_by_org<'a, T>(
 /// child row's first cell is a `TreeTd`.
 #[component]
 pub fn OrgTreeCard(
+    id: Option<uuid::Uuid>,
     name: String,
     #[props(default, into)] meta: String,
     cols: usize,
     head: Element,
     children: Element,
 ) -> Element {
-    let letter = name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_default();
     rsx! {
         Card { class: "mb-4",
             div { class: "overflow-x-auto",
@@ -49,7 +82,7 @@ pub fn OrgTreeCard(
                                 // Trunk from the icon down to the first child; `TreeTd` x = 2.5rem.
                                 span { class: "absolute left-10 top-[calc(50%+1rem)] bottom-0 border-l border-line" }
                                 div { class: "flex items-center gap-3",
-                                    span { class: "w-8 h-8 shrink-0 rounded-full bg-brand text-fg-invert flex items-center justify-center font-semibold", "{letter}" }
+                                    OrgIcon { id, name: name.clone() }
                                     span { class: "font-semibold text-fg-strong", "{name}" }
                                     if !meta.is_empty() {
                                         span { class: "text-sm text-fg-muted", "{meta}" }

@@ -5,8 +5,8 @@
 use dioxus::prelude::*;
 
 use super::ui::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, OrgTreeCard, PageHeader, Td, Th, TreeTd,
-    group_by_org,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th,
+    TreeTd, group_by_org,
 };
 
 // WebspaceRow + the list endpoint now live in the shared api_mcp layer.
@@ -74,13 +74,13 @@ pub fn WebspaceList() -> Element {
         if filtered_rows.is_empty() {
             Card { div { class: "card-pad text-fg-muted text-center", "No folders yet" } }
         }
-        for (org, rows) in group_by_org(filtered_rows.iter().copied(), |r| &r.organization_name) {
+        for OrgGroup { id: org_id, name: org, rows } in group_by_org(filtered_rows.iter().copied(), |r| (Some(r.organization_id), r.organization_name.as_str())) {
             {
                 let hosts = rows.chunk_by(|a, b| a.host_id == b.host_id).map(<[_]>::to_vec).collect::<Vec<_>>();
                 let n_hosts = hosts.len();
                 let meta = format!("{} folders", rows.len());
                 rsx! {
-                    OrgTreeCard { key: "{org}", name: org.clone(), meta, cols: 5,
+                    OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta, cols: 5,
                         head: rsx! {
                             Th { "Name" }
                             Th { "Path" }

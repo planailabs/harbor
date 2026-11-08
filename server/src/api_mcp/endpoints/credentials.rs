@@ -18,6 +18,7 @@ pub struct CredentialRow {
     pub id: Uuid,
     pub name: String,
     pub credential_type: String,
+    pub organization_id: Option<Uuid>,
     pub organization_name: Option<String>,
     pub created_at: String,
 }
@@ -280,10 +281,11 @@ pub async fn credential_list(
         Uuid,
         String,
         String,
+        Option<Uuid>,
         Option<String>,
         chrono::DateTime<chrono::Utc>,
     );
-    let base = "SELECT c.id, c.name, c.credential_type, o.name, c.created_at \
+    let base = "SELECT c.id, c.name, c.credential_type, o.id, o.name, c.created_at \
                 FROM credentials c LEFT JOIN organizations o ON o.id = c.organization_id";
 
     let rows = if principal.admin {
@@ -306,11 +308,11 @@ pub async fn credential_list(
     Ok(rows
         .into_iter()
         .map(
-            |(id, name, credential_type, organization_name, created_at)| CredentialRow {
+            |(id, name, credential_type, organization_id, organization_name, created_at)| CredentialRow {
                 id,
                 name,
                 credential_type,
-                organization_name,
+                organization_id, organization_name,
                 created_at: created_at.format("%Y-%m-%d %H:%M").to_string(),
             },
         )

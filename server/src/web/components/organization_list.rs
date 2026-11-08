@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use super::ui::{Card, PageHeader, Td, TdMuted, Th};
+use super::ui::{Card, OrgIcon, PageHeader, Td, TdMuted, Th};
 
 // OrgRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::organizations::{OrgListInput, list_organizations};
@@ -34,7 +34,12 @@ pub fn OrganizationList() -> Element {
                                     let id = row.id.to_string();
                                     move |_| { navigator().push(crate::web::app::Route::OrganizationDetail { id: id.clone() }); }
                                 },
-                                Td { "{row.name}" }
+                                Td {
+                                    div { class: "flex items-center gap-3",
+                                        OrgIcon { id: Some(row.id), name: row.name.clone() }
+                                        "{row.name}"
+                                    }
+                                }
                                 Td { "{row.member_count}" }
                                 TdMuted { "{row.created_at}" }
                             }

@@ -18,6 +18,7 @@ pub struct HostRow {
     pub id: Uuid,
     pub name: String,
     pub kind: String,
+    pub organization_id: Uuid,
     pub organization_name: String,
     pub folder_count: i64,
     pub hostname: Option<String>,
@@ -188,6 +189,7 @@ pub async fn host_list(
         Uuid,
         String,
         String,
+        Uuid,
         String,
         i64,
         Option<String>,
@@ -195,7 +197,7 @@ pub async fn host_list(
         bool,
     );
     let query = format!(
-        "SELECT h.id, h.name, h.kind, o.name, \
+        "SELECT h.id, h.name, h.kind, o.id, o.name, \
          (SELECT count(*) FROM webspaces w WHERE w.webspace_host_id = h.id), \
          {hostname_subquery}, \
          h.changedetection_credential_id IS NOT NULL, \
@@ -227,6 +229,7 @@ pub async fn host_list(
                 id,
                 name,
                 kind,
+                organization_id,
                 organization_name,
                 folder_count,
                 hostname,
@@ -236,6 +239,7 @@ pub async fn host_list(
                 id,
                 name,
                 kind,
+                organization_id,
                 organization_name,
                 folder_count,
                 hostname,

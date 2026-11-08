@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use super::ui::{Card, PageHeader, Td, TdMuted, Th};
+use super::ui::{Card, OrgGroup, OrgTreeCard, PageHeader, Td, TdMuted, Th, TreeTd, group_by_org};
 
 // CredentialRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::credentials::{CredentialListInput, list_credentials};
@@ -47,34 +47,29 @@ pub fn CredentialList() -> Element {
             }
         }
 
-        Card {
-            div { class: "overflow-x-auto",
-                table { class: "table w-full",
-                    thead {
-                        tr {
+        if rows.is_empty() {
+            Card { div { class: "card-pad text-fg-muted text-center", "No credentials yet" } }
+        }
+        for OrgGroup { id, name, rows } in group_by_org(rows, |r| (r.organization_id, r.organization_name.as_deref().unwrap_or("Global"))) {
+            {
+                let n = rows.len();
+                rsx! {
+                    OrgTreeCard { key: "{name}", id, name: name.clone(), meta: format!("{n} credentials"), cols: 3,
+                        head: rsx! {
                             Th { "Name" }
                             Th { "Type" }
-                            Th { "Organization" }
                             Th { "Created" }
-                        }
-                    }
-                    tbody {
-                        if rows.is_empty() {
-                            tr {
-                                td { class: "td text-fg-muted text-center", colspan: "4", "No credentials yet" }
-                            }
-                        }
-                        for row in rows {
-                            tr { class: "cursor-pointer hover:bg-surface-2",
+                        },
+                        for (i, row) in rows.into_iter().enumerate() {
+                            tr { key: "{row.id}", class: "cursor-pointer hover:bg-surface-2",
                                 onclick: {
                                     let id = row.id.to_string();
                                     move |_| { navigator().push(crate::web::app::Route::CredentialEdit { id: id.clone() }); }
                                 },
-                                Td { "{row.name}" }
+                                TreeTd { last: i + 1 == n, "{row.name}" }
                                 Td {
                                     span { class: "badge badge-info", "{row.credential_type}" }
                                 }
-                                TdMuted { {row.organization_name.as_deref().unwrap_or("Global")} }
                                 TdMuted { "{row.created_at}" }
                             }
                         }

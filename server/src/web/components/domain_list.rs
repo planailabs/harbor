@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ui::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, PageHeader, Td, TdMuted, Th,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgGroup, OrgTreeCard, PageHeader,
+    Td, Th, TreeTd, group_by_org,
 };
 
 // DomainRow, the list endpoint and the bulk operations now live in the shared
@@ -26,7 +27,10 @@ async fn list_cf_credentials_for_bulk() -> Result<Vec<CfCredOption>, ServerFnErr
     let user = crate::web::user::current_user().await?;
     let pool = crate::server_pool()?;
     let rows = crate::api_mcp::endpoints::credentials::credential_options_for_user(
-        &pool, &user, &["cloudflare"], &[],
+        &pool,
+        &user,
+        &["cloudflare"],
+        &[],
     )
     .await?;
     Ok(rows
@@ -363,51 +367,50 @@ pub fn DomainList() -> Element {
             }
         }
 
-        Card {
-            div { class: "overflow-x-auto",
-                table { class: "table w-full",
-                    thead {
-                        tr {
-                            th { class: "th w-8",
-                                input {
-                                    r#type: "checkbox",
-                                    checked: sel_count > 0 && sel_count == filtered_count,
-                                    oninput: {
-                                        let all = filtered_ids.clone();
-                                        move |evt| {
-                                            if evt.checked() {
-                                                selected.set(all.clone());
-                                            } else {
-                                                selected.set(vec![]);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+        if filtered_rows.is_empty() {
+            Card { div { class: "card-pad text-fg-muted text-center", "No domains yet" } }
+        } else {
+            label { class: "mb-2 flex items-center gap-2 text-sm text-fg-muted",
+                input {
+                    r#type: "checkbox",
+                    checked: sel_count > 0 && sel_count == filtered_count,
+                    oninput: {
+                        let all = filtered_ids.clone();
+                        move |evt| selected.set(if evt.checked() { all.clone() } else { vec![] })
+                    }
+                }
+                "Select all"
+            }
+        }
+        for OrgGroup { id: org_id, name: org, rows } in group_by_org(filtered_rows.iter().copied(), |r| (Some(r.organization_id), r.organization_name.as_str())) {
+            {
+                let n = rows.len();
+                rsx! {
+                    OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta: format!("{n} domains"), cols: 6,
+                        head: rsx! {
                             Th { "Domain" }
                             Th { "Registrar" }
                             Th { "SSL" }
                             Th { "DNSSEC" }
                             Th { "CF Zone" }
                             Th { "Expires" }
-                            Th { "Org" }
-                        }
-                    }
-                    tbody {
-                        if filtered_rows.is_empty() {
-                            tr {
-                                td { class: "td text-fg-muted text-center", colspan: "8", "No domains yet" }
-                            }
-                        }
-                        for row in &filtered_rows {
+                        },
+                        for (i, row) in rows.into_iter().enumerate() {
                             {
                                 let rid = row.id;
                                 let is_selected = selected.read().contains(&rid);
                                 rsx! {
-                                    tr { class: "cursor-pointer hover:bg-surface-2",
-                                        td { class: "td w-8",
+                                    tr { key: "{rid}", class: "cursor-pointer hover:bg-surface-2",
+                                        onclick: {
+                                            let id = rid.to_string();
+                                            move |_| {
+                                                navigator().push(crate::web::app::Route::DomainDetail { id: id.clone() });
+                                            }
+                                        },
+                                        TreeTd { last: i + 1 == n,
                                             input {
                                                 r#type: "checkbox",
+                                                class: "mr-2",
                                                 checked: is_selected,
                                                 onclick: move |evt| { evt.stop_propagation(); },
                                                 oninput: move |evt| {
@@ -419,14 +422,6 @@ pub fn DomainList() -> Element {
                                                     }
                                                 }
                                             }
-                                        }
-                                        td { class: "td cursor-pointer",
-                                            onclick: {
-                                                let id = rid.to_string();
-                                                move |_| {
-                                                    navigator().push(crate::web::app::Route::DomainDetail { id: id.clone() });
-                                                }
-                                            },
                                             "{row.name}"
                                         }
                                         Td {
@@ -461,7 +456,6 @@ pub fn DomainList() -> Element {
                                                 span { class: "text-fg-muted", {row.expires_at.as_deref().unwrap_or("-")} }
                                             }
                                         }
-                                        TdMuted { "{row.organization_name}" }
                                     }
                                 }
                             }

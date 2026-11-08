@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ui::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgTreeCard, PageHeader, Td, Th,
-    TreeTd, group_by_org,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, FormField, OrgGroup, OrgTreeCard, PageHeader,
+    Td, Th, TreeTd, group_by_org,
 };
 
 // HostRow + the list/bulk-ChangeDetection endpoints now live in the shared
@@ -248,11 +248,11 @@ pub fn WebspaceHostList() -> Element {
                 "Select all"
             }
         }
-        for (org, rows) in group_by_org(filtered_rows.iter().copied(), |r| &r.organization_name) {
+        for OrgGroup { id: org_id, name: org, rows } in group_by_org(filtered_rows.iter().copied(), |r| (Some(r.organization_id), r.organization_name.as_str())) {
             {
                 let n = rows.len();
                 rsx! {
-                    OrgTreeCard { key: "{org}", name: org.clone(), meta: format!("{n} hosts"), cols: 5,
+                    OrgTreeCard { key: "{org}", id: org_id, name: org.clone(), meta: format!("{n} hosts"), cols: 5,
                         head: rsx! {
                             Th { "Name" }
                             Th { "Kind" }

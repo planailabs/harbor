@@ -25,6 +25,7 @@ pub struct WebspaceRow {
     pub runtime: Option<String>,
     pub local_status: Option<String>,
     pub auth_mode: String,
+    pub organization_id: Uuid,
     pub organization_name: String,
 }
 
@@ -303,9 +304,10 @@ pub async fn webspace_list(
         Option<String>,
         Option<String>,
         String,
+        Uuid,
         String,
     );
-    let query = "SELECT w.id, w.name, h.id, h.name, h.kind, w.path_prefix, w.hosting_type, w.runtime, w.local_status, w.auth_mode, o.name \
+    let query = "SELECT w.id, w.name, h.id, h.name, h.kind, w.path_prefix, w.hosting_type, w.runtime, w.local_status, w.auth_mode, o.id, o.name \
                  FROM webspaces w \
                  JOIN webspace_hosts h ON h.id = w.webspace_host_id \
                  JOIN organizations o ON o.id = w.organization_id";
@@ -341,7 +343,7 @@ pub async fn webspace_list(
                 runtime,
                 local_status,
                 auth_mode,
-                organization_name,
+                organization_id, organization_name,
             )| WebspaceRow {
                 id,
                 name,
@@ -353,7 +355,7 @@ pub async fn webspace_list(
                 runtime,
                 local_status,
                 auth_mode,
-                organization_name,
+                organization_id, organization_name,
             },
         )
         .collect())

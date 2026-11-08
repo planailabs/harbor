@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use super::ui::{Card, PageHeader, Td, TdMuted, Th};
+use super::ui::{Card, OrgGroup, OrgTreeCard, PageHeader, Td, Th, TreeTd, group_by_org};
 
 // BasicAuthListRow + the list endpoint now live in the shared api_mcp layer.
 use crate::api_mcp::endpoints::basic_auth::{BasicAuthListInput, list_basic_auth_lists};
@@ -20,24 +20,27 @@ pub fn BasicAuthList() -> Element {
             Link { to: crate::web::app::Route::BasicAuthForm {}, class: "btn btn-primary", "Create List" }
         }
 
-        Card {
-            div { class: "overflow-x-auto",
-                table { class: "table w-full",
-                    thead { tr { Th { "Name" } Th { "Organization" } Th { "Credentials" } } }
-                    tbody {
-                        if rows.is_empty() {
-                            tr { td { class: "td text-fg-muted text-center", colspan: "3", "No basic auth lists" } }
-                        }
-                        for row in &rows {
-                            tr { class: "cursor-pointer hover:bg-surface-2",
+        if rows.is_empty() {
+            Card { div { class: "card-pad text-fg-muted text-center", "No basic auth lists" } }
+        }
+        for OrgGroup { id, name, rows } in group_by_org(&rows, |r| (Some(r.organization_id), r.organization_name.as_str())) {
+            {
+                let n = rows.len();
+                rsx! {
+                    OrgTreeCard { key: "{name}", id, name: name.clone(), meta: format!("{n} lists"), cols: 2,
+                        head: rsx! {
+                            Th { "Name" }
+                            Th { "Credentials" }
+                        },
+                        for (i, row) in rows.into_iter().enumerate() {
+                            tr { key: "{row.id}", class: "cursor-pointer hover:bg-surface-2",
                                 onclick: {
                                     let id = row.id.to_string();
                                     move |_| {
                                         navigator().push(crate::web::app::Route::BasicAuthDetail { id: id.clone() });
                                     }
                                 },
-                                Td { "{row.name}" }
-                                TdMuted { "{row.organization_name}" }
+                                TreeTd { last: i + 1 == n, "{row.name}" }
                                 Td { "{row.credential_count}" }
                             }
                         }

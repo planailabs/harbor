@@ -17,6 +17,7 @@ use plan_ai_api_mcp::{ApiError, Principal};
 pub struct BasicAuthListRow {
     pub id: Uuid,
     pub name: String,
+    pub organization_id: Uuid,
     pub organization_name: String,
     pub credential_count: i64,
 }
@@ -78,18 +79,20 @@ pub async fn basic_auth_list(
     principal: &Principal,
     _input: BasicAuthListInput,
 ) -> Result<Vec<BasicAuthListRow>, ApiError> {
-    let base = "SELECT b.id, b.name, o.name, \
+    let base = "SELECT b.id, b.name, o.id, o.name, \
                 (SELECT count(*) FROM basic_auth_credentials c WHERE c.list_id = b.id) \
                 FROM basic_auth_lists b JOIN organizations o ON o.id = b.organization_id";
 
     let rows = match principal.read_filter() {
         None => {
-            sqlx::query_as::<_, (Uuid, String, String, i64)>(&format!("{base} ORDER BY b.name"))
-                .fetch_all(pool)
-                .await
+            sqlx::query_as::<_, (Uuid, String, Uuid, String, i64)>(&format!(
+                "{base} ORDER BY b.name"
+            ))
+            .fetch_all(pool)
+            .await
         }
         Some(org_ids) => {
-            sqlx::query_as::<_, (Uuid, String, String, i64)>(&format!(
+            sqlx::query_as::<_, (Uuid, String, Uuid, String, i64)>(&format!(
                 "{base} WHERE b.organization_id = ANY($1) ORDER BY b.name"
             ))
             .bind(org_ids)
@@ -102,9 +105,10 @@ pub async fn basic_auth_list(
     Ok(rows
         .into_iter()
         .map(
-            |(id, name, organization_name, credential_count)| BasicAuthListRow {
+            |(id, name, organization_id, organization_name, credential_count)| BasicAuthListRow {
                 id,
                 name,
+                organization_id,
                 organization_name,
                 credential_count,
             },

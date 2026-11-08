@@ -22,6 +22,7 @@ pub struct ContactRow {
     pub email: String,
     pub country: String,
     pub spaceship_synced: bool,
+    pub organization_id: Uuid,
     pub organization_name: String,
 }
 
@@ -56,10 +57,11 @@ pub async fn contact_list(
         String,
         String,
         Option<String>,
+        Uuid,
         String,
     );
     let base = "SELECT c.id, c.label, c.first_name, c.last_name, c.email, c.country, \
-                c.spaceship_contact_id, o.name \
+                c.spaceship_contact_id, o.id, o.name \
                 FROM domain_contacts c JOIN organizations o ON o.id = c.organization_id";
 
     let rows = match principal.read_filter() {
@@ -90,6 +92,7 @@ pub async fn contact_list(
                 email,
                 country,
                 spaceship_id,
+                organization_id,
                 organization_name,
             )| {
                 ContactRow {
@@ -100,6 +103,7 @@ pub async fn contact_list(
                     email,
                     country,
                     spaceship_synced: spaceship_id.is_some(),
+                    organization_id,
                     organization_name,
                 }
             },
