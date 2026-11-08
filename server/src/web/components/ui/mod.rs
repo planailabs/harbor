@@ -59,6 +59,10 @@ pub fn OrgIcon(id: Option<uuid::Uuid>, name: String) -> Element {
     }
 }
 
+/// Open/collapsed state of one `OrgTreeCard`, read by its `TreeTh` toggle.
+#[derive(Clone, Copy)]
+struct OrgTreeOpen(Signal<bool>);
+
 /// Outer card for one organization: its own column header (`head`), then the
 /// org row (round letter icon + name) with the tree hanging below it. Each
 /// child row's first cell is a `TreeTd`.
@@ -71,6 +75,7 @@ pub fn OrgTreeCard(
     head: Element,
     children: Element,
 ) -> Element {
+    let open = use_context_provider(|| OrgTreeOpen(Signal::new(true))).0;
     rsx! {
         Card { class: "mb-4",
             div { class: "overflow-x-auto",
@@ -80,7 +85,9 @@ pub fn OrgTreeCard(
                         tr {
                             td { class: "td relative", colspan: "{cols}",
                                 // Trunk from the icon down to the first child; `TreeTd` x = 2.5rem.
-                                span { class: "absolute left-10 top-[calc(50%+1rem)] bottom-0 border-l border-line" }
+                                if open() {
+                                    span { class: "absolute left-10 top-[calc(50%+1rem)] bottom-0 border-l border-line" }
+                                }
                                 div { class: "flex items-center gap-3",
                                     OrgIcon { id, name: name.clone() }
                                     span { class: "font-semibold text-fg-strong", "{name}" }
@@ -90,7 +97,9 @@ pub fn OrgTreeCard(
                                 }
                             }
                         }
-                        {children}
+                        if open() {
+                            {children}
+                        }
                     }
                 }
             }
@@ -108,8 +117,22 @@ const TREE_INDENT: f32 = 1.5;
 #[component]
 pub fn TreeTh(#[props(default)] checkbox: bool, children: Element) -> Element {
     let pad = TREE_X0 + TREE_INDENT;
+    let toggle = try_use_context::<OrgTreeOpen>().map(|o| o.0);
     rsx! {
-        th { class: "th", style: "padding-left: {pad}rem",
+        th { class: "th relative", style: "padding-left: {pad}rem",
+            // Collapse/expand the org tree; sits on the tree's trunk line.
+            if let Some(mut open) = toggle {
+                button {
+                    r#type: "button",
+                    class: "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded text-fg-muted hover:text-fg-strong hover:bg-surface-3",
+                    style: "left: {TREE_X0}rem",
+                    aria_expanded: "{open()}",
+                    aria_label: if open() { "Collapse" } else { "Expand" },
+                    title: if open() { "Collapse" } else { "Expand" },
+                    onclick: move |_| open.toggle(),
+                    if open() { "▾" } else { "▸" }
+                }
+            }
             if checkbox {
                 input { r#type: "checkbox", class: "mr-2 invisible", tabindex: "-1", aria_hidden: "true" }
             }
