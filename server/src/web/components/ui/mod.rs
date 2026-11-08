@@ -120,12 +120,11 @@ pub fn TreeTh(#[props(default)] checkbox: bool, children: Element) -> Element {
     let toggle = try_use_context::<OrgTreeOpen>().map(|o| o.0);
     rsx! {
         th { class: "th relative", style: "padding-left: {pad}rem",
-            // Collapse/expand the org tree; sits on the tree's trunk line.
+            // Collapse/expand the org tree, in the left padding before the trunk line.
             if let Some(mut open) = toggle {
                 button {
                     r#type: "button",
-                    class: "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded text-fg-muted hover:text-fg-strong hover:bg-surface-3",
-                    style: "left: {TREE_X0}rem",
+                    class: "absolute left-1 top-1/2 -translate-y-1/2 w-9 h-9 text-2xl leading-none flex items-center justify-center rounded text-fg-muted hover:text-fg-strong hover:bg-surface-3",
                     aria_expanded: "{open()}",
                     aria_label: if open() { "Collapse" } else { "Expand" },
                     title: if open() { "Collapse" } else { "Expand" },
