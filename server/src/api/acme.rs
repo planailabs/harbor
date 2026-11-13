@@ -106,7 +106,7 @@ async fn acme_account(pool: &PgPool, contact_email: &str) -> anyhow::Result<inst
         let json = crate::crypto::decrypt(&enc)
             .map_err(|e| anyhow::anyhow!("decrypt acme account: {e}"))?;
         let creds: AccountCredentials = serde_json::from_slice(&json)?;
-        return Ok(Account::from_credentials(creds).await?);
+        return Ok(Account::builder()?.from_credentials(creds).await?);
     }
 
     let directory_url = crate::config::config()
@@ -114,16 +114,17 @@ async fn acme_account(pool: &PgPool, contact_email: &str) -> anyhow::Result<inst
         .as_ref()
         .and_then(|p| p.acme_directory_url.clone())
         .unwrap_or_else(|| LetsEncrypt::Production.url().to_string());
-    let (account, creds) = Account::create(
-        &NewAccount {
-            contact: &[&format!("mailto:{contact_email}")],
-            terms_of_service_agreed: true,
-            only_return_existing: false,
-        },
-        &directory_url,
-        None,
-    )
-    .await?;
+    let (account, creds) = Account::builder()?
+        .create(
+            &NewAccount {
+                contact: &[&format!("mailto:{contact_email}")],
+                terms_of_service_agreed: true,
+                only_return_existing: false,
+            },
+            directory_url,
+            None,
+        )
+        .await?;
 
     let enc = crate::crypto::encrypt(&serde_json::to_vec(&creds)?)
         .map_err(|e| anyhow::anyhow!("encrypt acme account: {e}"))?;
@@ -215,16 +216,8 @@ async fn run_acme_flow(
 
     // Create order
     let mut order = account
-        .new_order(&NewOrder {
-            identifiers: &[Identifier::Dns(domain.to_string())],
-        })
+        .new_order(&NewOrder::new(&[Identifier::Dns(domain.to_string())]))
         .await?;
-
-    // Get authorization and DNS-01 challenge
-    let authorizations = order.authorizations().await?;
-    let authz = authorizations
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("no authorizations returned"))?;
 
     // The account is reused, so LE may hand back an authorization that is
     // already valid from a recent issuance — no challenge needed then.
@@ -233,52 +226,58 @@ async fn run_acme_flow(
     // "x" and "*.x" share this TXT name, and we wipe existing records below:
     // concurrent flows for both would delete each other's challenge.
     let _challenge_guard = challenge_lock(&txt_name).lock_owned().await;
-    let created_record_id = match authz.status {
-        AuthorizationStatus::Valid => {
-            tracing::info!(domain, "authorization already valid, skipping DNS-01");
-            None
-        }
-        AuthorizationStatus::Pending => {
-            let challenge = authz
-                .challenges
-                .iter()
-                .find(|c| c.r#type == ChallengeType::Dns01)
-                .ok_or_else(|| anyhow::anyhow!("no DNS-01 challenge found"))?;
-
-            let dns_value = order.key_authorization(challenge).dns_value();
-
-            tracing::info!(domain, txt_name = %txt_name, "creating DNS-01 TXT record");
-
-            // Delete any existing _acme-challenge records first
-            let existing = cf_client.list_dns_records(zone_id).await?;
-            for rec in &existing {
-                if rec.name == txt_name && rec.record_type == "TXT" {
-                    let _ = cf_client.delete_dns_record(zone_id, &rec.id).await;
+    let mut created_record_id = None;
+    {
+        // Authorization/challenge handles borrow the order's state, so the whole
+        // DNS-01 exchange has to run inside the authorization stream's lifetime.
+        let mut authorizations = order.authorizations();
+        while let Some(result) = authorizations.next().await {
+            let mut authz = result?;
+            match authz.status {
+                AuthorizationStatus::Valid => {
+                    tracing::info!(domain, "authorization already valid, skipping DNS-01");
                 }
+                AuthorizationStatus::Pending => {
+                    let mut challenge = authz
+                        .challenge(ChallengeType::Dns01)
+                        .ok_or_else(|| anyhow::anyhow!("no DNS-01 challenge found"))?;
+
+                    let dns_value = challenge.key_authorization().dns_value();
+
+                    tracing::info!(domain, txt_name = %txt_name, "creating DNS-01 TXT record");
+
+                    // Delete any existing _acme-challenge records first
+                    let existing = cf_client.list_dns_records(zone_id).await?;
+                    for rec in &existing {
+                        if rec.name == txt_name && rec.record_type == "TXT" {
+                            let _ = cf_client.delete_dns_record(zone_id, &rec.id).await;
+                        }
+                    }
+
+                    let record = cloudflare_api::compat::CreateDnsRecord {
+                        record_type: "TXT".to_string(),
+                        name: txt_name.clone(),
+                        content: Some(dns_value),
+                        ttl: Some(60),
+                        proxied: Some(false),
+                        priority: None,
+                        data: None,
+                        comment: Some("ACME DNS-01 challenge".to_string()),
+                    };
+                    let created_record = cf_client.create_dns_record(zone_id, &record).await?;
+
+                    // Wait for DNS propagation
+                    tracing::info!(domain, "waiting 15s for DNS propagation");
+                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+
+                    // Tell ACME server the challenge is ready
+                    challenge.set_ready().await?;
+                    created_record_id = Some(created_record.id);
+                }
+                other => anyhow::bail!("authorization not usable: {other:?}"),
             }
-
-            let record = cloudflare_api::compat::CreateDnsRecord {
-                record_type: "TXT".to_string(),
-                name: txt_name.clone(),
-                content: Some(dns_value),
-                ttl: Some(60),
-                proxied: Some(false),
-                priority: None,
-                data: None,
-                comment: Some("ACME DNS-01 challenge".to_string()),
-            };
-            let created_record = cf_client.create_dns_record(zone_id, &record).await?;
-
-            // Wait for DNS propagation
-            tracing::info!(domain, "waiting 15s for DNS propagation");
-            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-
-            // Tell ACME server the challenge is ready
-            order.set_challenge_ready(&challenge.url).await?;
-            Some(created_record.id)
         }
-        other => anyhow::bail!("authorization not usable: {other:?}"),
-    };
+    }
     let cleanup = || async {
         if let Some(id) = &created_record_id {
             let _ = cf_client.delete_dns_record(zone_id, id).await;
@@ -310,7 +309,7 @@ async fn run_acme_flow(
     let key_pair = rcgen::KeyPair::generate()?;
     let csr = params.serialize_request(&key_pair)?;
 
-    order.finalize(csr.der()).await?;
+    order.finalize_csr(csr.der()).await?;
 
     // Poll for certificate
     let cert_chain_pem = loop {

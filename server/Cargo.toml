@@ -56,7 +56,11 @@ schemars = { version = "1.2", features = ["derive", "uuid1"] }
 cloudflare-api = { path = "../cloudflare-api", optional = true }
 spaceship-api = { path = "../spaceship-api", optional = true }
 changedetection-api = { path = "../changedetection-api", optional = true }
-instant-acme = { version = "0.7", optional = true }
+# 0.8 fixes two RFC 8555 interop bugs 0.7 had: it sends the required
+# `User-Agent` header, and it tolerates challenges whose `token` the CA omits
+# (Pebble >= 2.7 and several CAs do; 0.7 failed with `missing field 'token'`
+# while parsing the authorization).
+instant-acme = { version = "0.8", default-features = false, features = ["hyper-rustls", "ring"], optional = true }
 rcgen = { version = "0.13", optional = true }
 async-stream = { version = "0.3", optional = true }
 futures-core = { version = "0.3", optional = true }
