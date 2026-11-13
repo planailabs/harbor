@@ -51,6 +51,11 @@ rustPlatform.buildRustPackage {
   SWAGGER_UI_DOWNLOAD_URL = "file://${swagger-ui}";
   env.GIT_SHA = gitSha;
 
+  # See proxy/package.nix: nixpkgs' default `cargoUseSystemLibs` preConfigure
+  # hook switches -sys crates to system libraries (pkg-config probing), while
+  # this workspace builds them from the vendored sources.
+  dontCargoUseSystemLibs = true;
+
   doCheck = false;
 
   # Build with dx instead of cargo so assets and WASM are bundled
