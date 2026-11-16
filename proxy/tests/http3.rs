@@ -3,65 +3,25 @@
 //! over HTTP/2 (TCP + BoringSSL) and HTTP/3 (QUIC + rustls) and must come out
 //! of the proxy the same way.
 
-use std::net::{Ipv4Addr, SocketAddr};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+mod common;
+
+use std::net::Ipv4Addr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
-use axum::body::{Body, Bytes};
-use axum::extract::State;
+use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, Uri};
 use axum::response::IntoResponse;
-use axum::routing::{any, get, post};
+use axum::routing::any;
 use bytes::Buf;
-use futures::StreamExt;
 use serde_json::{Value, json};
-use tokio::sync::broadcast;
+
+use common::{
+    MockHarbor, Pki, cert_entry, free_port, h2_client, serve, start_proxy, wait_until_served,
+};
 
 const APP_HOST: &str = "app.test";
-
-// ---------------------------------------------------------------- certificates
-
-struct Pki {
-    ca_pem: String,
-    ca_cert: rcgen::Certificate,
-    ca_key: rcgen::KeyPair,
-}
-
-struct Leaf {
-    chain_pem: String,
-    key_pem: String,
-    der: Vec<u8>,
-}
-
-impl Pki {
-    fn new() -> Self {
-        let ca_key = rcgen::KeyPair::generate().unwrap();
-        let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
-        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-        params
-            .distinguished_name
-            .push(rcgen::DnType::CommonName, "harbor test CA");
-        let ca_cert = params.self_signed(&ca_key).unwrap();
-        Self {
-            ca_pem: ca_cert.pem(),
-            ca_cert,
-            ca_key,
-        }
-    }
-
-    fn leaf(&self, host: &str) -> Leaf {
-        let key = rcgen::KeyPair::generate().unwrap();
-        let params = rcgen::CertificateParams::new(vec![host.to_string()]).unwrap();
-        let cert = params.signed_by(&key, &self.ca_cert, &self.ca_key).unwrap();
-        Leaf {
-            chain_pem: format!("{}{}", cert.pem(), self.ca_pem),
-            key_pem: key.serialize_pem(),
-            der: cert.der().to_vec(),
-        }
-    }
-}
 
 // ------------------------------------------------------------------- upstream
 
@@ -95,130 +55,7 @@ fn fingerprint(data: &[u8]) -> u64 {
     })
 }
 
-// --------------------------------------------------------- mock Harbor server
-
-#[derive(Clone)]
-struct Mock {
-    upstream: String,
-    certs: Arc<Mutex<Vec<Value>>>,
-    reload: broadcast::Sender<()>,
-}
-
-async fn routes(State(m): State<Mock>) -> impl IntoResponse {
-    axum::Json(json!({
-        "routes": [{ "host": APP_HOST, "path_prefix": "/", "upstream": m.upstream }],
-        "token_lifetime_secs": 3600,
-    }))
-}
-
-async fn certs(State(m): State<Mock>) -> impl IntoResponse {
-    axum::Json(Value::Array(m.certs.lock().unwrap().clone()))
-}
-
-async fn events(State(m): State<Mock>) -> impl IntoResponse {
-    let rx = tokio_stream::wrappers::BroadcastStream::new(m.reload.subscribe());
-    let stream = rx.map(|_| Ok::<_, std::io::Error>(Bytes::from("event: reload\ndata: {}\n\n")));
-    // A comment first so the proxy's SSE client sees the stream open.
-    let hello = futures::stream::once(async { Ok(Bytes::from(": hi\n\n")) });
-    (
-        [("content-type", "text/event-stream")],
-        Body::from_stream(hello.chain(stream)),
-    )
-}
-
-async fn serve(router: Router) -> SocketAddr {
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    addr
-}
-
-// ---------------------------------------------------------------------- proxy
-
-struct ProxyProcess(Child);
-
-impl Drop for ProxyProcess {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// A port free on both TCP and UDP (the HTTPS and QUIC listeners share it).
-fn free_port() -> u16 {
-    loop {
-        let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let port = tcp.local_addr().unwrap().port();
-        if std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_ok() {
-            return port;
-        }
-    }
-}
-
-fn start_proxy(
-    dir: &std::path::Path,
-    server: SocketAddr,
-    http: u16,
-    https: u16,
-    quic: bool,
-) -> ProxyProcess {
-    let token = dir.join("internal.token");
-    std::fs::write(&token, "test-token").unwrap();
-    let config = dir.join("config.toml");
-    std::fs::write(
-        &config,
-        format!(
-            "[proxy]\n\
-             domain = \"harbor.test\"\n\
-             http_addr = \"127.0.0.1:{http}\"\n\
-             https_addr = \"127.0.0.1:{https}\"\n\
-             quic = {quic}\n\
-             internal_token_path = \"{}\"\n\
-             server_url = \"http://{server}\"\n",
-            token.display()
-        ),
-    )
-    .unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_harbor-proxy"))
-        .env("CONFIG_PATH", &config)
-        .env("RUST_LOG", "info")
-        // The proxy logs to stdout; HARBOR_PROXY_TEST_LOG=1 shows it.
-        .stdout(if std::env::var_os("HARBOR_PROXY_TEST_LOG").is_some() {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        })
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
-    ProxyProcess(child)
-}
-
 // -------------------------------------------------------------------- clients
-
-fn root_store(pki: &Pki) -> rustls::RootCertStore {
-    let mut roots = rustls::RootCertStore::empty();
-    let der = rustls::pki_types::CertificateDer::from(pki.ca_cert.der().to_vec());
-    roots.add(der).unwrap();
-    roots
-}
-
-fn h2_client(pki: &Pki, https: u16) -> reqwest::Client {
-    reqwest::Client::builder()
-        .tls_certs_only([reqwest::Certificate::from_pem(pki.ca_pem.as_bytes()).unwrap()])
-        .resolve(APP_HOST, SocketAddr::from((Ipv4Addr::LOCALHOST, https)))
-        .resolve(
-            "unknown.test",
-            SocketAddr::from((Ipv4Addr::LOCALHOST, https)),
-        )
-        .tls_info(true)
-        .http2_adaptive_window(true)
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap()
-}
 
 struct H3Response {
     status: u16,
@@ -236,12 +73,7 @@ async fn h3_request(
     path: &str,
     body: Option<Vec<u8>>,
 ) -> anyhow::Result<H3Response> {
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let mut tls = rustls::ClientConfig::builder_with_provider(provider)
-        .with_protocol_versions(&[&rustls::version::TLS13])?
-        .with_root_certificates(root_store(pki))
-        .with_no_client_auth();
-    tls.alpn_protocols = vec![b"h3".to_vec()];
+    let tls = pki.client_config(b"h3");
     let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)?;
     let mut endpoint = quinn::Endpoint::client((Ipv4Addr::LOCALHOST, 0).into())?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(crypto)));
@@ -299,21 +131,6 @@ fn tls_peer_cert(resp: &reqwest::Response) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-async fn eventually<F, Fut>(what: &str, mut f: F)
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = bool>,
-{
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while Instant::now() < deadline {
-        if f().await {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
-
 /// The upstream-facing parts the edge sets: these must not depend on the
 /// visitor's HTTP version.
 fn edge_view(echo: &Value) -> Value {
@@ -354,37 +171,17 @@ async fn http3_is_routed_like_http2_and_advertised() {
     let leaf_b = pki.leaf(APP_HOST);
 
     let upstream = serve(Router::new().fallback(any(echo))).await;
-    let (reload, _) = broadcast::channel(4);
-    let mock = Mock {
-        upstream: upstream.to_string(),
-        certs: Arc::new(Mutex::new(vec![json!({
-            "domain": APP_HOST, "chain_pem": leaf_a.chain_pem, "key_pem": leaf_a.key_pem,
-        })])),
-        reload: reload.clone(),
-    };
-    let server = serve(
-        Router::new()
-            .route("/api/internal/routes", get(routes))
-            .route("/api/internal/certs", get(certs))
-            .route("/api/internal/certs/{host}", post(|| async { "" }))
-            .route("/api/internal/events", get(events))
-            .with_state(mock.clone()),
-    )
-    .await;
-
-    let dir = tempdir();
+    let mock = MockHarbor::new(
+        vec![json!({ "host": APP_HOST, "path_prefix": "/", "upstream": upstream.to_string() })],
+        vec![cert_entry(APP_HOST, &leaf_a)],
+    );
+    let server = mock.serve().await;
     let https = free_port();
-    let _proxy = start_proxy(dir.path(), server, free_port(), https, true);
-    let h2 = h2_client(&pki, https);
+    let _proxy = start_proxy(server, https, true);
+    let h2 = h2_client(&pki, https, &[APP_HOST, "unknown.test"]);
 
     // Routes and certificate A loaded: an HTTP/2 request verifies against the CA.
-    eventually("the proxy to serve app.test over HTTP/2", || async {
-        h2.get(format!("https://{APP_HOST}:{https}/ready"))
-            .send()
-            .await
-            .is_ok_and(|r| r.status() == 200)
-    })
-    .await;
+    wait_until_served(&h2, APP_HOST, https).await;
 
     // --- GET, both ways
     let r2 = h2
@@ -455,17 +252,15 @@ async fn http3_is_routed_like_http2_and_advertised() {
 
     // --- certificate rotation reaches both listeners
     assert_eq!(r3.peer_cert, leaf_a.der);
-    *mock.certs.lock().unwrap() = vec![json!({
-        "domain": APP_HOST, "chain_pem": leaf_b.chain_pem, "key_pem": leaf_b.key_pem,
-    })];
-    let _ = reload.send(());
-    eventually("QUIC to present the rotated certificate", || async {
+    *mock.certs.lock().unwrap() = vec![cert_entry(APP_HOST, &leaf_b)];
+    let _ = mock.reload.send(());
+    common::eventually("QUIC to present the rotated certificate", || async {
         h3_request(&pki, https, APP_HOST, "GET", "/", None)
             .await
             .is_ok_and(|r| r.peer_cert == leaf_b.der)
     })
     .await;
-    let fresh = h2_client(&pki, https);
+    let fresh = h2_client(&pki, https, &[APP_HOST]);
     let r2 = fresh
         .get(format!("https://{APP_HOST}:{https}/"))
         .send()
@@ -480,35 +275,15 @@ async fn quic_off_means_no_udp_and_no_advertisement() {
     let pki = Pki::new();
     let leaf = pki.leaf(APP_HOST);
     let upstream = serve(Router::new().fallback(any(echo))).await;
-    let (reload, _) = broadcast::channel(4);
-    let mock = Mock {
-        upstream: upstream.to_string(),
-        certs: Arc::new(Mutex::new(vec![json!({
-            "domain": APP_HOST, "chain_pem": leaf.chain_pem, "key_pem": leaf.key_pem,
-        })])),
-        reload,
-    };
-    let server = serve(
-        Router::new()
-            .route("/api/internal/routes", get(routes))
-            .route("/api/internal/certs", get(certs))
-            .route("/api/internal/certs/{host}", post(|| async { "" }))
-            .route("/api/internal/events", get(events))
-            .with_state(mock),
-    )
-    .await;
-
-    let dir = tempdir();
+    let mock = MockHarbor::new(
+        vec![json!({ "host": APP_HOST, "path_prefix": "/", "upstream": upstream.to_string() })],
+        vec![cert_entry(APP_HOST, &leaf)],
+    );
+    let server = mock.serve().await;
     let https = free_port();
-    let _proxy = start_proxy(dir.path(), server, free_port(), https, false);
-    let h2 = h2_client(&pki, https);
-    eventually("the proxy to serve app.test over HTTP/2", || async {
-        h2.get(format!("https://{APP_HOST}:{https}/ready"))
-            .send()
-            .await
-            .is_ok_and(|r| r.status() == 200)
-    })
-    .await;
+    let _proxy = start_proxy(server, https, false);
+    let h2 = h2_client(&pki, https, &[APP_HOST]);
+    wait_until_served(&h2, APP_HOST, https).await;
     let r = h2
         .get(format!("https://{APP_HOST}:{https}/"))
         .send()
@@ -525,26 +300,4 @@ async fn quic_off_means_no_udp_and_no_advertisement() {
         !matches!(attempt, Ok(Ok(_))),
         "HTTP/3 answered with quic = false"
     );
-}
-
-fn tempdir() -> TempDir {
-    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("harbor-proxy-h3-{}-{n}", std::process::id()));
-    std::fs::create_dir_all(&path).unwrap();
-    TempDir(path)
-}
-
-struct TempDir(std::path::PathBuf);
-
-impl TempDir {
-    fn path(&self) -> &std::path::Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }
