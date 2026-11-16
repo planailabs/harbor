@@ -47,6 +47,9 @@ const ALT_SVC_MAX_AGE: u32 = 86400;
 /// Request body bytes kept for an upstream retry, as Pingora's own sessions do.
 const RETRY_BUFFER_LIMIT: usize = 64 * 1024;
 
+/// How long a bodiless request waits for its FIN (see `settle_bodiless`).
+const BODILESS_FIN_WAIT: Duration = Duration::from_millis(50);
+
 /// How long a shutdown waits for in-flight HTTP/3 requests.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -201,7 +204,8 @@ async fn serve_connection(
                                 return;
                             }
                         };
-                        let session = H3Session::new(req, stream, conn, digest, client_addr);
+                        let mut session = H3Session::new(req, stream, conn, digest, client_addr);
+                        session.settle_bodiless().await;
                         let session = ServerSession::new_custom(Box::new(session));
                         proxy.process_new_http(session, &shutdown).await;
                     });
@@ -308,6 +312,35 @@ impl H3Session {
     /// HTTP/3 has no END_STREAM flag on HEADERS: a request without a body is
     /// one whose stream FIN arrived, usually in the same packet as the
     /// headers. Knowing it keeps a bodiless GET from going upstream chunked.
+    /// A GET (or HEAD, OPTIONS, DELETE, TRACE) without Content-Length whose
+    /// FIN did not come with its HEADERS: wait a moment for it rather than
+    /// send the request upstream as a chunked body of unknown length, which
+    /// some servers refuse on these methods. Clients send that FIN right
+    /// after the headers; one that keeps the stream open just pays the wait.
+    async fn settle_bodiless(&mut self) {
+        const BODILESS: [http::Method; 5] = [
+            http::Method::GET,
+            http::Method::HEAD,
+            http::Method::OPTIONS,
+            http::Method::DELETE,
+            http::Method::TRACE,
+        ];
+        if self.body_done
+            || self.pending.is_some()
+            || self.req.headers.contains_key(header::CONTENT_LENGTH)
+            || !BODILESS.contains(&self.req.method)
+        {
+            return;
+        }
+        if let Ok(read) = tokio::time::timeout(BODILESS_FIN_WAIT, self.stream().recv_data()).await {
+            match read {
+                Ok(Some(mut buf)) => self.pending = Some(buf.copy_to_bytes(buf.remaining())),
+                Ok(None) => self.body_done = true,
+                Err(_) => {}
+            }
+        }
+    }
+
     fn peek_body(&mut self) {
         if self.body_done || self.pending.is_some() {
             return;
