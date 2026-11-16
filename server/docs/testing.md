@@ -57,8 +57,10 @@ in-process mock of the Harbor internal API (routes, certificates, the SSE
 reload stream) and an echo upstream, then sends the same requests over
 HTTP/2 and HTTP/3 and requires the upstream to see them identically, the
 responses to carry the same edge headers and `Alt-Svc`, and a rotated
-certificate to reach both listeners. `HARBOR_PROXY_TEST_LOG=1` shows the
-proxy's log.
+certificate to reach both listeners. `proxy/tests/webtransport.rs` drives a
+WebTransport client through the binary to an echo server trusted by SPKI
+pin (see [WebTransport](/docs/webtransport)). `HARBOR_PROXY_TEST_LOG=1`
+shows the proxy's log, `HARBOR_PROXY_TEST_RUST_LOG` sets its `RUST_LOG`.
 
 The server's `credentials::pg_tests` boot a throwaway Postgres per test via
 [`pgtemp`](https://docs.rs/pgtemp) (needs `initdb` on PATH — the flake dev

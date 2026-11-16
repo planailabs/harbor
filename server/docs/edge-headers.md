@@ -57,6 +57,9 @@ certificates are the same too: whatever the sync task loads, including a
 renewed certificate swapped in at runtime, serves both listeners. 0-RTT
 (early data) is not accepted, since it can be replayed.
 
+The same listener carries [WebTransport](/docs/webtransport) sessions to
+hosts that declare a QUIC upstream.
+
 To turn it off, set `quic = false` in the `[proxy]` section of the proxy's
 config, or `services.harbor-proxy.quic = false` in NixOS (`proxy.quic` in the
 server module's settings is passed on). With `openFirewall`, the module opens
