@@ -62,6 +62,27 @@ WebTransport client through the binary to an echo server trusted by SPKI
 pin (see [WebTransport](/docs/webtransport)). `HARBOR_PROXY_TEST_LOG=1`
 shows the proxy's log, `HARBOR_PROXY_TEST_RUST_LOG` sets its `RUST_LOG`.
 
+The Rust client in that test is not a browser, and Chrome does things it
+doesn't (GREASE capsules on the CONNECT stream, for one; the capsule parser
+has a unit test with Chrome's bytes). Before changing the WebTransport path,
+also run a real browser through the edge. There is no browser in this repo's
+test stack; the check that exists drives Playwright Chromium from the
+cms-agent repository against a running cms-agent instance (its Remote
+Browsing stream is the WebTransport upstream), with a mock Harbor API like
+the tests' and the built `harbor-proxy`:
+
+```
+# from the cms-agent checkout; chain.mjs documents its arguments
+node chain.mjs <harbor-proxy binary> <https port> <cms-agent http port> \
+  <cms-agent WebTransport port> <spki hex> <cert chain pem> <key pem> <spki base64>
+```
+
+Chromium does not trust a locally added root for WebTransport, so the page
+pins the edge's leaf with `serverCertificateHashes` (an ECDSA certificate
+valid for at most 14 days). The run passes when a keyframe arrives on a
+WebTransport stream through the edge and key input sent on a bidi stream
+navigates the remote page.
+
 The server's `credentials::pg_tests` boot a throwaway Postgres per test via
 [`pgtemp`](https://docs.rs/pgtemp) (needs `initdb` on PATH — the flake dev
 shell provides it), run the real `sqlx` migrations, insert encrypted

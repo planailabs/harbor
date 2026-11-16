@@ -390,11 +390,12 @@ pub async fn relay(
         }
     };
 
+    tracing::debug!(path = %target.path, "WebTransport upstream session open");
     let parts: http::request::Parts = req.into();
     let down = match DownSession::accept(http::Request::from_parts(parts, ()), stream, conn).await {
         Ok(s) => Arc::new(s),
         Err(e) => {
-            tracing::debug!("WebTransport accept failed: {e}");
+            tracing::warn!("WebTransport session from the browser not accepted: {e}");
             up.close(0, b"");
             return;
         }
@@ -416,6 +417,32 @@ pub async fn relay(
     tasks.abort_all();
 }
 
+/// Take the capsules buffered from the browser's CONNECT stream, up to the
+/// session's close: its code and reason, `None` while it hasn't come (an
+/// incomplete capsule stays buffered). Anything else is skipped — browsers
+/// send GREASE capsules right after the handshake.
+fn browser_close(
+    buf: &mut BytesMut,
+) -> Result<Option<(u32, String)>, web_transport_proto::CapsuleError> {
+    use web_transport_proto::CapsuleError;
+    while !buf.is_empty() {
+        let mut peek = &buf[..];
+        match Capsule::decode(&mut peek) {
+            Ok(Capsule::CloseWebTransportSession { code, reason }) => {
+                return Ok(Some((code, reason)));
+            }
+            Ok(_) => {
+                let used = buf.len() - peek.len();
+                let _ = buf.split_to(used);
+            }
+            // Incomplete, also in the middle of a varint: wait for more.
+            Err(CapsuleError::UnexpectedEnd | CapsuleError::VarInt(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(None)
+}
+
 /// Watch both ends of the session and pass the first close on: the
 /// browser's CLOSE capsule (or its CONNECT stream ending) closes the
 /// upstream session with the same code and reason; the upstream's close is
@@ -431,29 +458,27 @@ async fn close_session(
             data = connect.recv_data() => match data {
                 Ok(Some(mut chunk)) => {
                     buf.extend_from_slice(&chunk.copy_to_bytes(chunk.remaining()));
-                    loop {
-                        let mut peek = &buf[..];
-                        match Capsule::decode(&mut peek) {
-                            Ok(Capsule::CloseWebTransportSession { code, reason }) => {
-                                up.close(code, reason.as_bytes());
-                                return;
-                            }
-                            Ok(_) => {
-                                let used = buf.len() - peek.len();
-                                let _ = buf.split_to(used);
-                            }
-                            // Incomplete: wait for more.
-                            Err(web_transport_proto::CapsuleError::UnexpectedEnd) => break,
-                            // Malformed (or oversized): the session is broken.
-                            Err(_) => {
-                                up.close(0, b"");
-                                return;
-                            }
+                    match browser_close(&mut buf) {
+                        Ok(None) => {}
+                        Ok(Some((code, reason))) => {
+                            up.close(code, reason.as_bytes());
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::debug!("WebTransport CONNECT stream from the browser: bad capsule: {e}");
+                            up.close(0, b"");
+                            return;
                         }
                     }
                 }
                 // FIN or the connection went: the browser is gone.
-                Ok(None) | Err(_) => {
+                Ok(None) => {
+                    tracing::debug!("WebTransport CONNECT stream from the browser finished");
+                    up.close(0, b"");
+                    return;
+                }
+                Err(e) => {
+                    tracing::debug!("WebTransport CONNECT stream from the browser failed: {e}");
                     up.close(0, b"");
                     return;
                 }
@@ -671,6 +696,40 @@ mod tests {
         assert_eq!(
             upstream_host("http://[2001:db8::3]:4321/x").unwrap(),
             "2001:db8::3"
+        );
+    }
+
+    #[test]
+    fn browser_close_skips_grease_and_waits_for_the_rest() {
+        use bytes::BytesMut;
+        // What Chrome sends on the CONNECT stream: a GREASE capsule right
+        // after the handshake, later the close (code 0, no reason).
+        let grease = [
+            0xc2u8, 0xb7, 0x05, 0xd9, 0x6e, 0x22, 0x8c, 0x7f, 0x04, 0xde, 0xad, 0xbe, 0xef,
+        ];
+        let close = [0x68u8, 0x43, 0x04, 0, 0, 0, 0];
+        let mut buf = BytesMut::from(&grease[..]);
+        assert_eq!(super::browser_close(&mut buf).unwrap(), None);
+        assert!(buf.is_empty());
+        // Split anywhere, even inside a varint: nothing until it is whole.
+        for split in 1..close.len() {
+            let mut buf = BytesMut::from(&close[..split]);
+            assert_eq!(
+                super::browser_close(&mut buf).unwrap(),
+                None,
+                "split at {split}"
+            );
+            buf.extend_from_slice(&close[split..]);
+            assert_eq!(
+                super::browser_close(&mut buf).unwrap(),
+                Some((0, String::new()))
+            );
+        }
+        let mut both = BytesMut::from(&grease[..]);
+        both.extend_from_slice(&[0x68, 0x43, 0x07, 0, 0, 0x10, 0x92, b'b', b'y', b'e']);
+        assert_eq!(
+            super::browser_close(&mut both).unwrap(),
+            Some((4242, "bye".into()))
         );
     }
 
