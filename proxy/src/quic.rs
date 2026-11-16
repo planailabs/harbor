@@ -17,6 +17,11 @@
 //!
 //! 0-RTT is off (rustls' default): early data can be replayed, and the edge
 //! forwards POSTs to apps that do not expect that.
+//!
+//! WebTransport rides on the same connections: its extended CONNECT is a
+//! request like any other until HarborProxy has routed and authorized it;
+//! then the request task hands its stream back to the connection loop, which
+//! gives the whole connection to `crate::webtransport::relay`.
 
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -40,6 +45,7 @@ use pingora::{Error, ErrorType, OrErr, Result};
 
 use crate::cert_store::CertStore;
 use crate::proxy::HarborProxy;
+use crate::webtransport::{UpstreamClient, WebTransportTarget};
 
 /// How long a client may cache the HTTP/3 advertisement.
 const ALT_SVC_MAX_AGE: u32 = 86400;
@@ -85,7 +91,16 @@ pub fn build_service(
         "quic",
         QuicService {
             addr: addr.to_string(),
-            proxy: Arc::new(pingora::proxy::http_proxy(server_conf, proxy)),
+            proxy: Arc::new({
+                let mut proxy = pingora::proxy::http_proxy(server_conf, proxy);
+                // Pingora refuses CONNECT outright; here it has to reach
+                // HarborProxy, which routes WebTransport's extended CONNECT
+                // and answers any other CONNECT with 405 itself.
+                let mut options = pingora::apps::HttpServerOptions::default();
+                options.allow_connect_method_proxying = true;
+                proxy.server_options = Some(options);
+                proxy
+            }),
             cert_store,
         },
     )
@@ -124,6 +139,13 @@ impl pingora::services::background::BackgroundService for QuicService {
                 return;
             }
         };
+        let upstream = match UpstreamClient::new() {
+            Ok(c) => Some(Arc::new(c)),
+            Err(e) => {
+                tracing::error!("WebTransport disabled, no client socket for upstreams: {e}");
+                None
+            }
+        };
         let port = endpoint.local_addr().map(|a| a.port()).unwrap_or_default();
         let _ = ALT_SVC.set(alt_svc_value(port));
         tracing::info!(addr = %self.addr, "listening for HTTP/3 (QUIC)");
@@ -134,8 +156,9 @@ impl pingora::services::background::BackgroundService for QuicService {
                     let Some(incoming) = incoming else { break };
                     let proxy = self.proxy.clone();
                     let shutdown = shutdown.clone();
+                    let upstream = upstream.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = serve_connection(incoming, proxy, shutdown).await {
+                        if let Err(e) = serve_connection(incoming, proxy, upstream, shutdown).await {
                             tracing::debug!("HTTP/3 connection ended: {e}");
                         }
                     });
@@ -157,9 +180,14 @@ impl pingora::services::background::BackgroundService for QuicService {
     }
 }
 
+/// A WebTransport CONNECT that HarborProxy let through, on its way back from
+/// the request task to the connection loop.
+type HandOff = (RequestHeader, H3Stream, WebTransportTarget);
+
 async fn serve_connection(
     incoming: quinn::Incoming,
     proxy: Arc<HttpProxy<HarborProxy>>,
+    upstream: Option<Arc<UpstreamClient>>,
     mut shutdown: ShutdownWatch,
 ) -> anyhow::Result<()> {
     let conn = incoming.await?;
@@ -180,8 +208,21 @@ async fn serve_connection(
         socket_digest: None,
     });
 
-    let mut h3_conn: h3::server::Connection<h3_quinn::Connection, Bytes> =
-        h3::server::Connection::new(h3_quinn::Connection::new(conn.clone())).await?;
+    // WebTransport (extended CONNECT, HTTP datagrams) is offered on every
+    // connection; a session takes its connection over (one per connection,
+    // as browsers open them).
+    let mut builder = h3::server::builder();
+    if upstream.is_some() {
+        builder
+            .enable_webtransport(true)
+            .enable_extended_connect(true)
+            .enable_datagram(true)
+            .max_webtransport_sessions(1);
+    }
+    let mut h3_conn: h3::server::Connection<h3_quinn::Connection, Bytes> = builder
+        .build(h3_quinn::Connection::new(conn.clone()))
+        .await?;
+    let (handoff_tx, mut handoff_rx) = tokio::sync::mpsc::channel::<HandOff>(1);
     let mut draining = *shutdown.borrow();
     if draining {
         h3_conn.shutdown(0).await?;
@@ -196,6 +237,8 @@ async fn serve_connection(
                     let conn = conn.clone();
                     let digest = digest.clone();
                     let client_addr = client_addr.clone();
+                    let handoff_tx = handoff_tx.clone();
+                    let webtransport = upstream.is_some();
                     tokio::spawn(async move {
                         let (req, stream) = match resolver.resolve_request().await {
                             Ok(r) => r,
@@ -204,10 +247,21 @@ async fn serve_connection(
                                 return;
                             }
                         };
-                        let mut session = H3Session::new(req, stream, conn, digest, client_addr);
+                        let (back_tx, back_rx) = tokio::sync::oneshot::channel();
+                        let back = (webtransport
+                            && req.method() == http::Method::CONNECT
+                            && req.extensions().get::<h3::ext::Protocol>()
+                                == Some(&h3::ext::Protocol::WEB_TRANSPORT))
+                        .then_some(back_tx);
+                        let mut session = H3Session::new(req, stream, conn, digest, client_addr, back);
                         session.settle_bodiless().await;
                         let session = ServerSession::new_custom(Box::new(session));
                         proxy.process_new_http(session, &shutdown).await;
+                        // HarborProxy let a WebTransport session through:
+                        // the connection loop takes it from here.
+                        if let Ok(handoff) = back_rx.await {
+                            let _ = handoff_tx.send(handoff).await;
+                        }
                     });
                 }
                 Ok(None) => break,
@@ -218,6 +272,11 @@ async fn serve_connection(
                     break;
                 }
             },
+            Some((req, stream, target)) = handoff_rx.recv() => {
+                let Some(client) = upstream.clone() else { break };
+                crate::webtransport::relay(client, conn, h3_conn, req, stream, target).await;
+                return Ok(());
+            }
             _ = shutdown.changed(), if !draining => {
                 draining = true;
                 h3_conn.shutdown(0).await?;
@@ -237,8 +296,12 @@ pub struct H3Session {
     /// `RequestStream` is `Send` but not `Sync` (quinn keeps boxed futures in
     /// it); Pingora wants `Sync`. Every access is through `&mut self`, so
     /// `Mutex::get_mut` hands it out without ever locking.
-    stream: Mutex<H3Stream>,
+    /// `None` only once a WebTransport CONNECT was handed back.
+    stream: Mutex<Option<H3Stream>>,
     conn: quinn::Connection,
+    /// Set on a WebTransport CONNECT: where the stream goes if HarborProxy
+    /// lets the session through (see `Drop`).
+    webtransport: Option<tokio::sync::oneshot::Sender<HandOff>>,
     digest: Arc<Digest>,
     client_addr: SocketAddr,
     /// A body chunk read early, to find out whether there is a body at all.
@@ -271,6 +334,7 @@ impl H3Session {
         conn: quinn::Connection,
         digest: Arc<Digest>,
         client_addr: SocketAddr,
+        webtransport: Option<tokio::sync::oneshot::Sender<HandOff>>,
     ) -> Self {
         let (parts, ()) = req.into_parts();
         let mut req: RequestHeader = parts.into();
@@ -285,8 +349,9 @@ impl H3Session {
         }
         let mut session = Self {
             req,
-            stream: Mutex::new(stream),
+            stream: Mutex::new(Some(stream)),
             conn,
+            webtransport,
             digest,
             client_addr,
             pending: None,
@@ -305,7 +370,11 @@ impl H3Session {
     }
 
     fn stream(&mut self) -> &mut H3Stream {
-        self.stream.get_mut().unwrap_or_else(|e| e.into_inner())
+        self.stream
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+            .expect("HTTP/3 stream used after a WebTransport hand-off")
     }
 
     /// Find out, without waiting, whether the request body already ended.
@@ -327,6 +396,7 @@ impl H3Session {
         ];
         if self.body_done
             || self.pending.is_some()
+            || self.webtransport.is_some()
             || self.req.headers.contains_key(header::CONTENT_LENGTH)
             || !BODILESS.contains(&self.req.method)
         {
@@ -342,7 +412,9 @@ impl H3Session {
     }
 
     fn peek_body(&mut self) {
-        if self.body_done || self.pending.is_some() {
+        // A CONNECT stream carries the session's capsules, not a body:
+        // nothing may be read from it before the hand-off.
+        if self.body_done || self.pending.is_some() || self.webtransport.is_some() {
             return;
         }
         let polled = self.stream().recv_data().now_or_never();
@@ -455,6 +527,36 @@ impl H3Session {
             },
             None => fut.await,
         }
+    }
+}
+
+/// Pingora drops the session when it is done with the request. A
+/// WebTransport CONNECT that HarborProxy marked with a target and left
+/// unanswered is not done: its stream goes back to the connection loop.
+impl Drop for H3Session {
+    fn drop(&mut self) {
+        let Some(back) = self.webtransport.take() else {
+            return;
+        };
+        if self.response_written.is_some() {
+            return;
+        }
+        let Some(target) = self.req.extensions.remove::<WebTransportTarget>() else {
+            return;
+        };
+        let Some(stream) = self
+            .stream
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        else {
+            return;
+        };
+        let req = std::mem::replace(
+            &mut self.req,
+            RequestHeader::build("GET", b"/", None).expect("static request header"),
+        );
+        let _ = back.send((req, stream, target));
     }
 }
 

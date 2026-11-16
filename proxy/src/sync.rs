@@ -28,6 +28,18 @@ struct RouteEntry {
     /// Absent = the edge's full set of headers, framing denied.
     #[serde(default)]
     headers: Option<HeadersEntry>,
+    /// The host's QUIC upstream for WebTransport (on the route's upstream
+    /// host). Absent: WebTransport to this folder is refused.
+    #[serde(default)]
+    quic_upstream: Option<QuicUpstreamEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuicUpstreamEntry {
+    port: u16,
+    /// Lowercase hex SHA-256 of the upstream certificate's DER
+    /// SubjectPublicKeyInfo.
+    spki_sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,9 +197,26 @@ async fn reload_routes(
                         })
                         .unwrap_or_default();
 
+                    // On the folder's own upstream host (the instance), at the
+                    // QUIC port the host declares.
+                    let quic_upstream = entry.quic_upstream.and_then(|q| {
+                        let http_upstream = match &route {
+                            Route::Direct(upstream)
+                            | Route::StaticOrigin { upstream, .. }
+                            | Route::Relay { upstream, .. } => upstream.as_str(),
+                        };
+                        match crate::webtransport::QuicUpstream::new(http_upstream, q.port, &q.spki_sha256) {
+                            Ok(q) => Some(q),
+                            Err(e) => {
+                                tracing::error!(host = %entry.host, "bad quic_upstream, WebTransport off: {e}");
+                                None
+                            }
+                        }
+                    });
+
                     map.entry(entry.host)
                         .or_default()
-                        .push((entry.path_prefix, route, auth, headers));
+                        .push((entry.path_prefix, route, auth, headers, quic_upstream));
                 }
                 // Longest path prefix first, so the proxy matches the most specific folder.
                 for folders in map.values_mut() {
@@ -195,7 +224,7 @@ async fn reload_routes(
                 }
                 let mut route_count = 0usize;
                 for (host, folders) in &map {
-                    for (path_prefix, route, auth, _) in folders {
+                    for (path_prefix, route, auth, _, _) in folders {
                         route_count += 1;
                         let route_desc = match route {
                             Route::Direct(upstream) => format!("direct → {upstream}"),

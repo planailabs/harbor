@@ -4,6 +4,7 @@ mod proxy;
 mod quic;
 mod self_signed;
 mod sync;
+mod webtransport;
 
 fn main() {
     // Install rustls crypto provider for reqwest (used by the sync client).

@@ -99,9 +99,16 @@ struct RelayCtx {
     basic_authorization: Option<String>,
 }
 
-/// One mounted folder under a host: its path prefix, route target, auth and
-/// header policy.
-pub type Folder = (String, Route, AuthMode, HeaderPolicy);
+/// One mounted folder under a host: its path prefix, route target, auth,
+/// header policy, and the QUIC upstream WebTransport sessions go to (none:
+/// WebTransport to the folder is refused).
+pub type Folder = (
+    String,
+    Route,
+    AuthMode,
+    HeaderPolicy,
+    Option<crate::webtransport::QuicUpstream>,
+);
 
 /// Whether a request's host is routable, unknown, or the table is still empty.
 enum HostState {
@@ -652,6 +659,14 @@ impl ProxyHttp for HarborProxy {
     }
 
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
+        // Only the HTTP/3 listener lets CONNECT through to here, for
+        // WebTransport; anything else gets what Pingora answers on TCP.
+        let webtransport = crate::webtransport::is_webtransport_connect(session.req_header());
+        if session.req_header().method == http::Method::CONNECT && !webtransport {
+            session.respond_error(405).await?;
+            return Ok(true);
+        }
+
         // Intercept .well-known/harbor.json on any routed host (before auth)
         let path = session.req_header().uri.path();
         if path == "/.well-known/harbor.json" {
@@ -732,12 +747,16 @@ impl ProxyHttp for HarborProxy {
 
         // Clone the matched folder's mount + auth so we don't hold the routes
         // guard across awaits. Upstream selection happens in upstream_peer.
-        let (mount, auth) = {
+        let (mount, auth, quic_upstream) = {
             let routes = self.routes.load();
             match host_folders(&routes, &host).and_then(|f| match_folder(f, &req_path)) {
-                Some((mount, _, auth, headers)) => {
+                Some((mount, _, auth, headers, quic_upstream)) => {
                     ctx.headers = headers.clone();
-                    (mount.clone(), auth.clone())
+                    (mount.clone(), auth.clone(), quic_upstream.clone())
+                }
+                None if webtransport => {
+                    session.respond_error(404).await?;
+                    return Ok(true);
                 }
                 None => return Ok(false), // unmatched path → 404 via fail_to_proxy
             }
@@ -750,7 +769,32 @@ impl ProxyHttp for HarborProxy {
             }
             AuthMode::Oidc { org_id } => self.handle_oidc_auth(session, &host, org_id).await?,
         };
-        if blocked { Ok(true) } else { Ok(false) }
+        if blocked {
+            return Ok(true);
+        }
+
+        // A WebTransport session that got this far is relayed by the QUIC
+        // listener, not proxied: mark it with its target and answer nothing
+        // here (crate::webtransport). Folders without a QUIC upstream don't
+        // offer WebTransport.
+        if webtransport {
+            let Some(upstream) = quic_upstream else {
+                session.respond_error(501).await?;
+                return Ok(true);
+            };
+            let uri = &session.req_header().uri;
+            let path = format!(
+                "{}{}",
+                strip_mount_prefix(uri.path(), &mount),
+                uri.query().map(|q| format!("?{q}")).unwrap_or_default()
+            );
+            session
+                .req_header_mut()
+                .extensions
+                .insert(crate::webtransport::WebTransportTarget { upstream, path });
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     async fn upstream_peer(
@@ -1493,7 +1537,7 @@ mod tests {
 
         let folder =
             |tag: &str| -> Vec<Folder> {
-                vec![(tag.into(), Route::Direct(tag.into()), AuthMode::None, Default::default())]
+                vec![(tag.into(), Route::Direct(tag.into()), AuthMode::None, Default::default(), None)]
             };
         let mut routes: HashMap<String, Vec<Folder>> = HashMap::new();
         routes.insert("www.example.com".into(), folder("exact"));
