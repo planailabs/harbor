@@ -195,6 +195,10 @@ in
       lib.mkDefault (cfg.settings.proxy.internal_token_path or "/var/lib/harbor-server/internal.token")
     );
 
+    services.harbor-proxy.quic = lib.mkIf (cfg.settings ? proxy && cfg.settings.proxy ? quic) (
+      lib.mkDefault cfg.settings.proxy.quic
+    );
+
     systemd.services.harbor-proxy = lib.mkIf (cfg.settings ? proxy) {
       after = [ "harbor-server.service" ];
       requires = [ "harbor-server.service" ];

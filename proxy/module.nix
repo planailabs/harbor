@@ -47,10 +47,21 @@ in
       '';
     };
 
+    quic = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Serve HTTP/3 over QUIC on UDP, on the same address and port as
+        `https_addr`, and advertise it on HTTPS responses with `Alt-Svc`.
+        Sets `settings.proxy.quic`; with {option}`openFirewall` it also opens
+        UDP 443.
+      '';
+    };
+
     openFirewall = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Whether to open HTTP/HTTPS ports in the firewall.";
+      description = "Whether to open HTTP/HTTPS ports (TCP 80/443, and UDP 443 for QUIC) in the firewall.";
     };
   };
 
@@ -82,7 +93,7 @@ in
         # retry until it appears.
         LoadCredential = [ "internal.token:${cfg.internalTokenFile}" ];
 
-        # Needs to bind to ports 80/443
+        # Needs to bind to ports 80/443 (TCP, and UDP 443 for QUIC)
         AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
         CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
 
@@ -111,10 +122,12 @@ in
       internal_token_path = lib.mkDefault "/run/credentials/harbor-proxy.service/internal.token";
       server_url = lib.mkDefault "http://127.0.0.1:7380";
       upstream = lib.mkDefault "127.0.0.1:7380";
+      quic = cfg.quic;
     };
 
     networking.firewall = lib.mkIf cfg.openFirewall {
       allowedTCPPorts = [ 80 443 ];
+      allowedUDPPorts = lib.optional cfg.quic 443;
     };
   };
 }
