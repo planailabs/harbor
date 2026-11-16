@@ -3,7 +3,8 @@ members = ["common", "common/plan-ai-actions", "common/plan-ai-api-mcp", "common
 # plan-ai-design is consumed by path (design/ submodule). mac-mgmt excludes
 # common/plan-ai-actions from its workspace, so the design/ path only needs
 # to resolve here.
-exclude = ["design"]
+# proxy/vendor: patched third-party crates, used by path, not members.
+exclude = ["design", "proxy/vendor/h3", "proxy/vendor/h3-webtransport"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -14,6 +15,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "logg
 rmcp = { version = "0.17", default-features = false, features = ["server", "transport-io", "macros"] }
 
 [patch.crates-io]
+# HTTP/3 with a fix harbor-proxy needs for WebTransport (see its Cargo.toml).
+h3 = { path = "proxy/vendor/h3" }
 dioxus = { git = "https://github.com/mkg20001/dioxus.git", branch = "feat/embed" }
 dioxus-server = { git = "https://github.com/mkg20001/dioxus.git", branch = "feat/embed" }
 dioxus-i18n = { git = "https://github.com/mkg20001/dioxus-i18n.git", branch = "feat/dioxus-0.8" }

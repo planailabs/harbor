@@ -39,7 +39,15 @@ bytes = "1"
 # same Pingora HttpProxy as a custom session.
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 h3 = "0.0.8"
-h3-quinn = "0.0.10"
+h3-quinn = { version = "0.0.10", features = ["datagram"] }
+# WebTransport (src/webtransport.rs): browser sessions are accepted on the
+# HTTP/3 listener with h3's extension crates, and re-opened toward the
+# upstream with web-transport-quinn's client.
+h3-datagram = "0.0.2"
+h3-webtransport = { path = "vendor/h3-webtransport" }
+web-transport-quinn = { version = "0.13", default-features = false, features = ["ring"] }
+web-transport-proto = "0.6"
+url = "2"
 
 [dev-dependencies]
 # tests/http3.rs: mock Harbor server + echo upstream, HTTP/2 client.
