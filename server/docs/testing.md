@@ -49,7 +49,16 @@ certificates against a local [pebble](https://github.com/letsencrypt/pebble).
 cargo test --workspace --locked          # everything below
 cargo test -p mock-cloudflare            # mock ↔ generated-client contract
 cargo test -p harbor-server --features server   # Postgres-backed
+cargo test -p harbor-proxy               # proxy units + HTTP/3 end-to-end
 ```
+
+`proxy/tests/http3.rs` starts the real `harbor-proxy` binary against an
+in-process mock of the Harbor internal API (routes, certificates, the SSE
+reload stream) and an echo upstream, then sends the same requests over
+HTTP/2 and HTTP/3 and requires the upstream to see them identically, the
+responses to carry the same edge headers and `Alt-Svc`, and a rotated
+certificate to reach both listeners. `HARBOR_PROXY_TEST_LOG=1` shows the
+proxy's log.
 
 The server's `credentials::pg_tests` boot a throwaway Postgres per test via
 [`pgtemp`](https://docs.rs/pgtemp) (needs `initdb` on PATH — the flake dev
