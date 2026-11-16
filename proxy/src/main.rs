@@ -1,6 +1,7 @@
 mod cert_store;
 mod config;
 mod proxy;
+mod quic;
 mod self_signed;
 mod sync;
 
@@ -22,6 +23,7 @@ fn main() {
         redirect_domains = ?cfg.redirect_domains,
         http = %cfg.http_addr,
         https = %cfg.https_addr,
+        quic = cfg.quic,
         "starting harbor-proxy"
     );
 
@@ -49,7 +51,14 @@ fn main() {
     server.bootstrap();
 
     let conf = server.configuration.clone();
-    let proxy_svc = proxy::build_service(&conf, cfg, routes.clone(), cert_store.clone());
+    let harbor = proxy::HarborProxy::new(cfg, routes.clone());
+    if cfg.quic {
+        // UDP on the HTTPS address; its requests run through the same
+        // HarborProxy as the TCP listener's.
+        let quic_svc = quic::build_service(&conf, &cfg.https_addr, harbor.clone(), cert_store.clone());
+        server.add_service(quic_svc);
+    }
+    let proxy_svc = proxy::build_service(&conf, cfg, harbor, cert_store.clone());
     server.add_service(proxy_svc);
 
     // Spawn SSE sync as a background service

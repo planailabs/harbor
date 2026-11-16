@@ -113,6 +113,10 @@ enum HostState {
 /// The Pingora HTTP proxy that routes requests by Host header, then by the
 /// longest matching folder path prefix. Each host maps to a list of folders
 /// sorted by descending prefix length (longest match wins).
+///
+/// One value serves every listener (HTTP, HTTPS, HTTP/3); clones share the
+/// route table.
+#[derive(Clone)]
 pub struct HarborProxy {
     pub routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
     pub domain: String,
@@ -1058,6 +1062,13 @@ fn apply_security_headers(
     // An upstream's own Server banner is a build fingerprint (e.g. a container's
     // nginx version); the edge answers, so it is not passed through.
     let _ = resp.remove_header("server");
+    // Which protocols reach this host is the edge's to say, not the app's: an
+    // upstream's own Alt-Svc would name ports the visitor cannot use. HTTPS
+    // answers advertise HTTP/3 once the QUIC listener is up.
+    let _ = resp.remove_header("alt-svc");
+    if tls && let Some(alt_svc) = crate::quic::alt_svc() {
+        let _ = resp.insert_header("Alt-Svc", alt_svc);
+    }
     if !policy.enabled {
         return;
     }
@@ -1234,31 +1245,38 @@ fn strip_gate_params(uri: &str) -> String {
     }
 }
 
+impl HarborProxy {
+    pub fn new(
+        cfg: &crate::config::ProxyConfig,
+        routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
+    ) -> Self {
+        let internal_token = cfg.internal_token().trim().to_string();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("failed to build internal API client");
+        HarborProxy {
+            routes,
+            domain: cfg.domain.clone(),
+            redirect_domains: cfg
+                .redirect_domains
+                .iter()
+                .map(|d| d.to_lowercase())
+                .collect(),
+            internal_token,
+            server_url: cfg.server_url.trim_end_matches('/').to_string(),
+            client,
+        }
+    }
+}
+
 /// Build the Pingora HTTP proxy service with BoringSSL TLS and dynamic SNI.
 pub fn build_service(
     server_conf: &Arc<pingora::server::configuration::ServerConf>,
     cfg: &crate::config::ProxyConfig,
-    routes: Arc<ArcSwap<HashMap<String, Vec<Folder>>>>,
+    proxy: HarborProxy,
     cert_store: Arc<crate::cert_store::CertStore>,
 ) -> pingora::services::listening::Service<pingora::proxy::HttpProxy<HarborProxy>> {
-    let internal_token = cfg.internal_token().trim().to_string();
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .expect("failed to build internal API client");
-    let proxy = HarborProxy {
-        routes,
-        domain: cfg.domain.clone(),
-        redirect_domains: cfg
-            .redirect_domains
-            .iter()
-            .map(|d| d.to_lowercase())
-            .collect(),
-        internal_token,
-        server_url: cfg.server_url.trim_end_matches('/').to_string(),
-        client,
-    };
-
     let mut svc = http_proxy_service(server_conf, proxy);
 
     svc.add_tcp(&cfg.http_addr);
@@ -1405,6 +1423,15 @@ mod tests {
             .unwrap();
         apply_security_headers(true, &HeaderPolicy::default(), &mut resp);
         assert!(resp.headers.get("server").is_none());
+    }
+
+    #[test]
+    fn upstream_alt_svc_is_dropped() {
+        // No QUIC listener in unit tests, so nothing replaces it either.
+        let mut resp = pingora::http::ResponseHeader::build(200, None).unwrap();
+        resp.insert_header("Alt-Svc", "h3=\":8443\"; ma=60").unwrap();
+        apply_security_headers(true, &HeaderPolicy { enabled: false, frame_ancestors: None }, &mut resp);
+        assert!(resp.headers.get("alt-svc").is_none());
     }
 
     #[test]

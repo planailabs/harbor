@@ -20,6 +20,10 @@ pub struct ProxyConfig {
     pub http_addr: String,
     #[serde(default = "default_https_addr")]
     pub https_addr: String,
+    /// HTTP/3 over QUIC on UDP, same address and port as `https_addr`,
+    /// advertised to clients with `Alt-Svc`. On unless set to `false`.
+    #[serde(default = "default_quic")]
+    pub quic: bool,
     #[serde(default = "default_internal_token_path")]
     pub internal_token_path: String,
     #[serde(default = "default_server_url")]
@@ -31,6 +35,9 @@ fn default_http_addr() -> String {
 }
 fn default_https_addr() -> String {
     "[::]:443".to_string()
+}
+fn default_quic() -> bool {
+    true
 }
 fn default_internal_token_path() -> String {
     "/var/lib/harbor-server/internal.token".to_string()
