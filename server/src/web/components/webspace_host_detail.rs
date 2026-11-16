@@ -281,7 +281,7 @@ fn HostSettingsSection(host_id: Uuid, current_name: String) -> Element {
                         saving.set(true);
                         message.set(None);
                         spawn(async move {
-                            match update_host_settings(HostUpdateInput { id: host_id, name: n }).await {
+                            match update_host_settings(HostUpdateInput { id: host_id, name: n, quic_upstream: None }).await {
                                 Ok(()) => { message.set(Some("Saved".into())); refresh += 1; }
                                 Err(e) => message.set(Some(format!("{e}"))),
                             }

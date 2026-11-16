@@ -29,6 +29,42 @@ pub struct HostRow {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HostListInput {}
 
+/// Where the edge re-opens a proxy host's WebTransport sessions: this UDP
+/// port on the host's upstream address (its folders' upstream host), trusted
+/// by public key alone. Without it the edge refuses WebTransport to the host;
+/// HTTP is unaffected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QuicUpstream {
+    /// UDP port of the upstream's QUIC (WebTransport) listener.
+    pub port: u16,
+    /// Lowercase hex SHA-256 of the upstream certificate's DER
+    /// SubjectPublicKeyInfo. The certificate is self-signed and may rotate;
+    /// the key it carries must not.
+    pub spki_sha256: String,
+}
+
+impl QuicUpstream {
+    fn validate(&self) -> Result<(), String> {
+        if self.port == 0 {
+            return Err("quic_upstream.port must be 1-65535".into());
+        }
+        let hex = &self.spki_sha256;
+        if hex.len() != 64 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err("quic_upstream.spki_sha256 must be 64 lowercase hex digits".into());
+        }
+        Ok(())
+    }
+}
+
+/// `Some(None)` for an explicit `null`, `None` when the field is absent.
+fn explicit_null<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HostCreateInput {
     pub organization_id: Uuid,
@@ -38,6 +74,9 @@ pub struct HostCreateInput {
     /// Required when `kind == "cloudflare"`.
     #[serde(default)]
     pub cloudflare_credential_id: Option<Uuid>,
+    /// WebTransport upstream (proxy hosts only).
+    #[serde(default)]
+    pub quic_upstream: Option<QuicUpstream>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -52,6 +91,8 @@ pub struct WebspaceHostData {
     pub bindings: Vec<DomainBinding>,
     pub changedetection_credential_id: Option<Uuid>,
     pub changedetection_credential_name: Option<String>,
+    /// WebTransport upstream; `None` = WebTransport refused.
+    pub quic_upstream: Option<QuicUpstream>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -86,6 +127,15 @@ pub struct HostGetInput {
 pub struct HostUpdateInput {
     pub id: Uuid,
     pub name: String,
+    /// WebTransport upstream (proxy hosts only): an object sets it, `null`
+    /// removes it, leaving the field out keeps what is there.
+    #[serde(
+        default,
+        deserialize_with = "explicit_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "Option<QuicUpstream>")]
+    pub quic_upstream: Option<Option<QuicUpstream>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -252,7 +302,8 @@ pub async fn host_list(
 
 /// Create a webspace host (requires org write). For `kind == "cloudflare"` a
 /// Cloudflare Pages project is found-or-created and a root folder is added.
-/// Returns the new host id.
+/// A proxy host may name its WebTransport `quic_upstream`. Returns the new
+/// host id.
 #[api_mcp_dioxus_server(server = "create_host")]
 pub async fn host_create(
     pool: &sqlx::PgPool,
@@ -269,13 +320,22 @@ pub async fn host_create(
     if let (true, Some(cred_id)) = (input.kind == "cloudflare", input.cloudflare_credential_id) {
         super::credentials::require_credential_use(pool, principal, cred_id, None).await?;
     }
+    if let Some(q) = &input.quic_upstream {
+        if input.kind != "proxy" {
+            return Err(ApiError::bad_request("quic_upstream is for proxy hosts only"));
+        }
+        q.validate().map_err(ApiError::bad_request)?;
+    }
 
     let host_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO webspace_hosts (organization_id, name, kind) VALUES ($1, $2, $3) RETURNING id",
+        "INSERT INTO webspace_hosts (organization_id, name, kind, quic_upstream_port, quic_upstream_spki_sha256) \
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
     .bind(input.organization_id)
     .bind(&input.name)
     .bind(&input.kind)
+    .bind(input.quic_upstream.as_ref().map(|q| i32::from(q.port)))
+    .bind(input.quic_upstream.as_ref().map(|q| q.spki_sha256.clone()))
     .fetch_one(pool)
     .await
     .map_err(|e| ApiError::internal(format!("failed to create host: {e}")))?;
@@ -504,9 +564,13 @@ pub async fn host_get(
     principal: &Principal,
     input: HostGetInput,
 ) -> Result<WebspaceHostData, ApiError> {
-    let (id, name, kind, org_id, cd_cred_id) =
-        sqlx::query_as::<_, (Uuid, String, String, Uuid, Option<Uuid>)>(
-            "SELECT id, name, kind, organization_id, changedetection_credential_id \
+    let (id, name, kind, org_id, cd_cred_id, quic_port, quic_spki) =
+        sqlx::query_as::<
+            _,
+            (Uuid, String, String, Uuid, Option<Uuid>, Option<i32>, Option<String>),
+        >(
+            "SELECT id, name, kind, organization_id, changedetection_credential_id, \
+             quic_upstream_port, quic_upstream_spki_sha256 \
              FROM webspace_hosts WHERE id = $1",
         )
         .bind(input.id)
@@ -665,24 +729,39 @@ pub async fn host_get(
         bindings,
         changedetection_credential_id: cd_cred_id,
         changedetection_credential_name: cd_cred_name,
+        quic_upstream: match (quic_port, quic_spki) {
+            (Some(port), Some(spki_sha256)) => u16::try_from(port)
+                .ok()
+                .map(|port| QuicUpstream { port, spki_sha256 }),
+            _ => None,
+        },
     })
 }
 
-/// Rename a webspace host (requires org write). The CF Pages project name
-/// lives on the folder; the host name is for display.
+/// Update a webspace host's settings (requires org write): its name (the CF
+/// Pages project name lives on the folder; the host name is for display) and,
+/// for proxy hosts, its WebTransport `quic_upstream` (set, `null` to remove,
+/// absent to keep).
 #[api_mcp_dioxus_server(server = "update_host_settings")]
 pub async fn host_update(
     pool: &sqlx::PgPool,
     principal: &Principal,
     input: HostUpdateInput,
 ) -> Result<(), ApiError> {
-    let (org_id, _) = host_org(pool, input.id).await?;
+    let (org_id, kind) = host_org(pool, input.id).await?;
     principal.require_write(&org_id)?;
+    if let Some(Some(q)) = &input.quic_upstream {
+        if kind != "proxy" {
+            return Err(ApiError::bad_request("quic_upstream is for proxy hosts only"));
+        }
+        q.validate().map_err(ApiError::bad_request)?;
+    }
 
+    let mut tx = pool.begin().await.map_err(super::internal)?;
     sqlx::query("UPDATE webspace_hosts SET name = $1, updated_at = now() WHERE id = $2")
         .bind(&input.name)
         .bind(input.id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| match e.as_database_error() {
             Some(db) if db.is_unique_violation() => {
@@ -690,6 +769,22 @@ pub async fn host_update(
             }
             _ => super::internal(e),
         })?;
+    if let Some(quic) = &input.quic_upstream {
+        sqlx::query(
+            "UPDATE webspace_hosts SET quic_upstream_port = $1, quic_upstream_spki_sha256 = $2 \
+             WHERE id = $3",
+        )
+        .bind(quic.as_ref().map(|q| i32::from(q.port)))
+        .bind(quic.as_ref().map(|q| q.spki_sha256.clone()))
+        .bind(input.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(super::internal)?;
+    }
+    tx.commit().await.map_err(super::internal)?;
+    if input.quic_upstream.is_some() {
+        crate::api::internal::notify_proxy_reload();
+    }
     Ok(())
 }
 
@@ -1092,4 +1187,88 @@ pub async fn host_bulk_clear_changedetection(
         succeeded: result.rows_affected() as usize,
         failed: 0,
     })
+}
+
+#[cfg(all(test, feature = "server"))]
+mod quic_upstream_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn quic_upstream_is_set_kept_cleared_and_validated() {
+        let (_db, pool) = crate::credentials::pg_tests::test_db().await;
+        let org: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('o') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let admin = Principal::admin("a");
+        let pin = "ab".repeat(32);
+        let quic = QuicUpstream {
+            port: 4433,
+            spki_sha256: pin.clone(),
+        };
+
+        let id = host_create(
+            &pool,
+            &admin,
+            HostCreateInput {
+                organization_id: org,
+                name: "instance".into(),
+                kind: "proxy".into(),
+                cloudflare_credential_id: None,
+                quic_upstream: Some(quic.clone()),
+            },
+        )
+        .await
+        .unwrap();
+        let get = |pool: sqlx::PgPool| async move {
+            host_get(&pool, &Principal::admin("a"), HostGetInput { id })
+                .await
+                .unwrap()
+                .quic_upstream
+        };
+        assert_eq!(get(pool.clone()).await, Some(quic.clone()));
+
+        // As JSON over the API: absent keeps, null clears, an object sets.
+        let update = |json: serde_json::Value| {
+            let pool = pool.clone();
+            async move {
+                let input: HostUpdateInput = serde_json::from_value(json).unwrap();
+                host_update(&pool, &Principal::admin("a"), input).await
+            }
+        };
+        update(serde_json::json!({ "id": id, "name": "renamed" })).await.unwrap();
+        assert_eq!(get(pool.clone()).await, Some(quic.clone()));
+        update(serde_json::json!({ "id": id, "name": "renamed", "quic_upstream": null }))
+            .await
+            .unwrap();
+        assert_eq!(get(pool.clone()).await, None);
+        update(serde_json::json!({
+            "id": id, "name": "renamed",
+            "quic_upstream": { "port": 443, "spki_sha256": pin },
+        }))
+        .await
+        .unwrap();
+        assert_eq!(get(pool.clone()).await.map(|q| q.port), Some(443));
+
+        // The pin is 64 lowercase hex digits, the port non-zero.
+        for bad in [
+            serde_json::json!({ "port": 443, "spki_sha256": "AB".repeat(32) }),
+            serde_json::json!({ "port": 443, "spki_sha256": "ab" }),
+            serde_json::json!({ "port": 0, "spki_sha256": "ab".repeat(32) }),
+        ] {
+            let err = update(serde_json::json!({ "id": id, "name": "renamed", "quic_upstream": bad }))
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("quic_upstream"), "{err}");
+        }
+
+        // A web client that never heard of the field leaves it alone.
+        let from_ui = serde_json::to_value(HostUpdateInput {
+            id,
+            name: "renamed".into(),
+            quic_upstream: None,
+        })
+        .unwrap();
+        assert!(from_ui.get("quic_upstream").is_none());
+    }
 }

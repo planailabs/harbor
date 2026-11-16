@@ -117,6 +117,24 @@ struct RouteEntry {
     /// The folder's edge headers, when they differ from the defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     headers: Option<HeadersInfo>,
+    /// The host's QUIC upstream for WebTransport (on this route's upstream
+    /// host). Absent: the edge refuses WebTransport to the folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quic_upstream: Option<QuicUpstreamInfo>,
+}
+
+/// Same shape as the host API's `quic_upstream`.
+#[derive(Serialize)]
+struct QuicUpstreamInfo {
+    port: u16,
+    spki_sha256: String,
+}
+
+fn quic_upstream_info(port: Option<i32>, spki_sha256: Option<String>) -> Option<QuicUpstreamInfo> {
+    Some(QuicUpstreamInfo {
+        port: u16::try_from(port?).ok()?,
+        spki_sha256: spki_sha256?,
+    })
 }
 
 /// How the edge's security headers apply to a folder (see the proxy's
@@ -309,6 +327,7 @@ async fn get_routes(
         relay: None,
         auth: None,
         headers: None,
+        quic_upstream: None,
     }];
 
     // Local folder routes. Static folders are served by the proxy directly from
@@ -329,10 +348,12 @@ async fn get_routes(
             Option<uuid::Uuid>,
             bool,
             Option<String>,
+            Option<i32>,
+            Option<String>,
         ),
     >(
         "SELECT d.name, s.name, w.path_prefix, w.runtime, w.local_port, w.id, w.organization_id, w.auth_mode, w.auth_basic_list_id, \
-         w.security_headers, w.frame_ancestors \
+         w.security_headers, w.frame_ancestors, h.quic_upstream_port, h.quic_upstream_spki_sha256 \
          FROM webspace_host_domains whd \
          JOIN webspace_hosts h ON h.id = whd.webspace_host_id AND h.kind = 'proxy' \
          JOIN webspaces w ON w.webspace_host_id = h.id \
@@ -356,6 +377,8 @@ async fn get_routes(
         basic_list_id,
         security_headers,
         frame_ancestors,
+        quic_port,
+        quic_spki,
     ) in rows
     {
         let host = match subdomain.as_deref() {
@@ -373,6 +396,8 @@ async fn get_routes(
                 relay: None,
                 auth,
                 headers: headers_info(security_headers, frame_ancestors),
+                // Served by the Harbor origin, which has no QUIC upstream.
+                quic_upstream: None,
             });
         } else if let Some(port) = port {
             routes.push(RouteEntry {
@@ -383,6 +408,7 @@ async fn get_routes(
                 relay: None,
                 auth,
                 headers: headers_info(security_headers, frame_ancestors),
+                quic_upstream: quic_upstream_info(quic_port, quic_spki),
             });
         }
         // nodejs/docker folders without a running port are not routed yet.
@@ -525,6 +551,8 @@ async fn get_routes(
             }),
             auth,
             headers: headers_info(security_headers, frame_ancestors),
+            // A relay route's upstream is the relay server, not the app.
+            quic_upstream: None,
         });
     }
 
@@ -544,11 +572,13 @@ async fn get_routes(
             Option<uuid::Uuid>,
             bool,
             Option<String>,
+            Option<i32>,
+            Option<String>,
         ),
     >(
         "SELECT d.name, s.name, w.path_prefix, w.relay_url, w.organization_id, w.auth_mode, w.auth_basic_list_id, \
          w.tunnel_passthrough_host, w.tunnel_client_cert_credential_id, w.tunnel_basic_auth_credential_id, \
-         w.security_headers, w.frame_ancestors \
+         w.security_headers, w.frame_ancestors, h.quic_upstream_port, h.quic_upstream_spki_sha256 \
          FROM webspace_host_domains whd \
          JOIN webspace_hosts h ON h.id = whd.webspace_host_id AND h.kind = 'proxy' \
          JOIN webspaces w ON w.webspace_host_id = h.id \
@@ -573,6 +603,8 @@ async fn get_routes(
         basic_auth_cred_id,
         security_headers,
         frame_ancestors,
+        quic_port,
+        quic_spki,
     ) in tunnel_rows
     {
         let host = match subdomain.as_deref() {
@@ -634,6 +666,7 @@ async fn get_routes(
             }),
             auth,
             headers: headers_info(security_headers, frame_ancestors),
+            quic_upstream: quic_upstream_info(quic_port, quic_spki),
         });
     }
 

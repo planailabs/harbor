@@ -93,7 +93,7 @@ pub fn WebspaceHostForm() -> Element {
                     let oid = uuid::Uuid::parse_str(&oid_str).ok();
                     if let Some(oid) = oid {
                         let cf_cred_opt = if k == "cloudflare" { uuid::Uuid::parse_str(&cf_cred).ok() } else { None };
-                        match create_host(HostCreateInput { organization_id: oid, name: n, kind: k, cloudflare_credential_id: cf_cred_opt }).await {
+                        match create_host(HostCreateInput { organization_id: oid, name: n, kind: k, cloudflare_credential_id: cf_cred_opt, quic_upstream: None }).await {
                             Ok(id) => { nav.push(crate::web::app::Route::WebspaceHostDetail { id: id.to_string() }); }
                             Err(e) => error.set(Some(format!("{e}"))),
                         }
